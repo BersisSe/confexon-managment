@@ -2,9 +2,10 @@
 import CountryFlag from '@/components/CountryFlag.vue'
 import { ArrowLeft } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { supabase } from '@/lib/supabase'
+import GavelIntro from '@/components/GavelIntro.vue'
 import { uniqueDelegates } from '@/lib/delegates'
 import LoadingScreen from '@/components/LoadingScreen.vue'
 
@@ -15,6 +16,17 @@ const delegates = ref<Delegate[]>([])
 const name = ref('')
 const error = ref('')
 const loading = ref(true)
+
+// "Open session" brings the gavel down, then goes to the console.
+const router = useRouter()
+const gavel = ref(false)
+const toSession = () => ({ name: 'session', params: { id: route.params.id } })
+function openSession(e: MouseEvent, navigate: (e: MouseEvent) => void) {
+  // New tab / new window clicks stay untouched.
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return navigate(e)
+  e.preventDefault()
+  gavel.value = true
+}
 
 onMounted(async () => {
   const id = route.params.id as string
@@ -36,7 +48,10 @@ onMounted(async () => {
     <template v-else>
       <h1>{{ name }}</h1>
       <p class="muted">{{ t('roster.count', { n: delegates.length }) }}</p>
-      <RouterLink :to="{ name: 'session', params: { id: route.params.id } }" class="btn open">{{ t('roster.openSession') }}</RouterLink>
+      <RouterLink v-slot="{ href, navigate }" :to="toSession()" custom>
+        <a :href="href" class="btn open" @click="openSession($event, navigate)">{{ t('roster.openSession') }}</a>
+      </RouterLink>
+      <GavelIntro v-if="gavel" :title="name" @done="router.push(toSession())" />
       <p v-if="error" class="err">{{ error }}</p>
       <table class="tbl">
         <thead><tr><th>{{ t('roster.country') }}</th><th>{{ t('roster.delegate') }}</th></tr></thead>
