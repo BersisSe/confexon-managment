@@ -73,22 +73,24 @@ function applyExtend() {
 }
 
 // Only one motion may be active; starting another ends the current one (undoable).
-function endOther() {
+// The database enforces this too, so each step is saved before the next is sent.
+async function endOther() {
   const other = props.motions.find((m) => m.status === 'active')
-  if (!other) return () => {}
-  db.update('cmd_motions', { status: 'done', running_since: null }, { id: other.id })
-  return () => db.update('cmd_motions', { status: 'active', running_since: other.running_since, elapsed_ms: other.elapsed_ms }, { id: other.id })
+  if (!other) return async () => {}
+  const before = { status: 'active', running_since: other.running_since, elapsed_ms: other.elapsed_ms }
+  await db.update('cmd_motions', { status: 'done', running_since: null }, { id: other.id })
+  return async () => { await db.update('cmd_motions', before, { id: other.id }) }
 }
 
-function startMotion(m: Motion) {
-  const restoreOther = endOther()
+async function startMotion(m: Motion) {
+  const restoreOther = await endOther()
   db.update('cmd_motions', { status: 'active' }, { id: m.id })
   emit('log', 'caucus_started', { kind: m.kind, title: m.title })
-  pushUndo(t('undo.startCaucus'), () => { db.update('cmd_motions', { status: 'passed' }, { id: m.id }); restoreOther() })
+  pushUndo(t('undo.startCaucus'), async () => { await db.update('cmd_motions', { status: 'passed' }, { id: m.id }); await restoreOther() })
 }
 
-function createCaucus() {
-  const restoreOther = endOther()
+async function createCaucus() {
+  const restoreOther = await endOther()
   const { row } = db.insert('cmd_motions', {
     session_id: props.sessionId,
     kind: props.kind,
@@ -103,7 +105,7 @@ function createCaucus() {
   })
   emit('log', 'caucus_started', { kind: props.kind, title: form.title })
   form.title = ''
-  pushUndo(t('undo.startCaucus'), () => { db.remove('cmd_motions', { id: row.id }); restoreOther() })
+  pushUndo(t('undo.startCaucus'), async () => { await db.remove('cmd_motions', { id: row.id }); await restoreOther() })
 }
 
 function toggle() {
@@ -185,7 +187,7 @@ function end() {
 
       <div v-if="kind !== 'unmod'">
         <SpeakerBlock
-          :session-id="sessionId" :motion-id="active.id" :list="kind" :delegates="delegates" :attendance="attendance"
+          :key="active.id" :session-id="sessionId" :motion-id="active.id" :list="kind" :delegates="delegates" :attendance="attendance"
           :speakers="speakers" :now="now" :seconds="active.speaker_seconds ?? defaultSeconds" :motion-elapsed="active.elapsed_ms"
           @log="(k, d) => emit('log', k, d)"
         />
@@ -212,9 +214,9 @@ function end() {
 </template>
 
 <style scoped>
-.head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 14px }
+.head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 8px }
 .ttl { flex: 1; min-width: 240px }
-.ttl h2 { margin: 2px 0 0; font-family: var(--font-display); font-size: clamp(1.8rem, 4.2vw, 3.2rem); line-height: 1.1 }
+.ttl h2 { margin: 2px 0 0; font-family: var(--font-display); font-size: clamp(1.3rem, 2.4vw, 1.9rem); line-height: 1.15 }
 .pill { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; background: var(--white); border: 1px solid var(--divider); border-radius: 999px; box-shadow: var(--shadow-sm) }
 .pill b { font-family: var(--font-display); font-size: 1.9rem; font-variant-numeric: tabular-nums }
 .head.up .pill b { color: var(--danger) }

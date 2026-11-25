@@ -224,7 +224,7 @@ function lastText(l: Log) {
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 20px 0 6px }
 .stat { background: var(--white); border: 1px solid var(--divider); border-radius: 16px; padding: 14px 16px; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 12px; align-items: center; box-shadow: var(--shadow-sm) }
 .stat .ic { grid-row: 1 / 3; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: var(--cream-deep); color: var(--text-muted) }
-.stat .ic.live { background: #e6f2ea; color: var(--success-text) }
+.stat .ic.live { background: var(--success-soft); color: var(--success-text) }
 .stat b { font-family: var(--font-display); font-size: 26px; line-height: 1.1 }
 .stat small { font-size: 15px; color: var(--text-tertiary) }
 .stat > span:last-child { font-size: 12px; color: var(--text-muted); font-weight: 600 }
@@ -242,7 +242,7 @@ function lastText(l: Log) {
 .cm header { display: flex; justify-content: space-between; align-items: center; gap: 8px }
 .cm header strong { font-family: var(--font-display); font-size: 1.1rem }
 .badge { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: var(--cream-deep); color: var(--text-muted); display: inline-flex; align-items: center; gap: 6px }
-.badge.on { background: #e6f2ea; color: var(--success-text) }
+.badge.on { background: var(--success-soft); color: var(--success-text) }
 .badge i { width: 7px; height: 7px; border-radius: 50%; background: #3e7c4f; animation: pulse 1.8s infinite }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgb(62 124 79 / .6) } 70%, 100% { box-shadow: 0 0 0 7px rgb(62 124 79 / 0) } }
 .agenda { margin: 0; display: flex; gap: 8px; align-items: flex-start; font-weight: 600; color: var(--text) }
@@ -255,7 +255,7 @@ function lastText(l: Log) {
 .tick { position: absolute; top: -3px; bottom: -3px; width: 2px; background: rgb(28 25 23 / .35); border-radius: 2px }
 .meta { display: flex; justify-content: space-between; margin-top: 6px; font-size: 13px; color: var(--text-muted); font-weight: 600 }
 .q.majority { color: var(--success-text) }
-.q.third { color: #9a6a10 }
+.q.third { color: var(--warn-text) }
 .q.none { color: var(--danger) }
 .spk { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--accent-soft); border-radius: 12px }
 .spk .mic { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--white); color: var(--accent-dark) }

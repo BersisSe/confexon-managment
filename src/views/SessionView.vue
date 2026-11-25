@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import CountryFlag from '@/components/CountryFlag.vue'
-import { ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Undo2, Bell, BellOff, Minus, Plus, X } from 'lucide-vue-next'
+import { ArrowLeft, ArrowRight, Undo2, ChevronDown, ChevronUp, Bell, BellOff, Minus, Plus, X } from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -14,6 +14,10 @@ import { fmt, left } from '@/lib/time'
 import MotionsTab from '@/components/MotionsTab.vue'
 import CaucusPanel from '@/components/CaucusPanel.vue'
 import VoteTab from '@/components/VoteTab.vue'
+import ThemeToggle from '@/components/ThemeToggle.vue'
+import RollCall from '@/components/RollCall.vue'
+import OpeningSpeech from '@/components/OpeningSpeech.vue'
+import SpeakerAdd from '@/components/SpeakerAdd.vue'
 import SpeakerStage from '@/components/SpeakerStage.vue'
 import type { Ballot, Delegate, Motion, Speaker, Status, Vote } from '@/lib/types'
 
@@ -43,7 +47,6 @@ const tab = ref<'gsl' | 'motions' | 'mod' | 'unmod' | 'single' | 'vote'>('gsl')
 const loading = ref(true)
 const error = ref('')
 const panel = ref<'' | 'roll' | 'agenda' | 'yield'>('')
-const search = ref('')
 const agendaDraft = ref('')
 const secondsDraft = ref(90)
 const settingsOpen = ref(false)
@@ -70,12 +73,12 @@ const rolled = computed(() => Object.keys(attendance.value).length > 0)
 const queue = computed(() => speakers.value.filter((s) => s.list === 'gsl' && !s.finished_at).sort((a, b) => a.position - b.position))
 const current = computed(() => queue.value[0] ?? null)
 const upcoming = computed(() => queue.value.slice(1))
-const addable = computed(() => {
-  const q = search.value.trim().toLowerCase()
-  return delegates.value.filter(
-    (d) => attendance.value[d.id] && attendance.value[d.id] !== 'absent' && d.country.toLowerCase().includes(q),
-  )
-})
+const presentDelegates = computed(() => delegates.value.filter((d) => attendance.value[d.id] && attendance.value[d.id] !== 'absent'))
+// Until the first speech starts, GSL opens on the list builder.
+const gslReady = ref(false)
+const gslSetup = computed(() =>
+  !gslReady.value && !speakers.value.some((s) => s.list === 'gsl' && (s.finished_at || s.running_since || s.elapsed_ms > 0)),
+)
 const yieldTargets = computed(() =>
   delegates.value.filter((d) => attendance.value[d.id] && attendance.value[d.id] !== 'absent' && d.id !== current.value?.delegate_id),
 )
@@ -96,6 +99,51 @@ const netState = computed<'ok' | 'offline' | 'reconnecting' | 'syncing'>(() => {
   return 'ok'
 })
 
+// ---- session flow: roll call -> opening speeches (once per committee) -> debate ----
+// Progress is kept as cmd_log entries, so no extra columns are needed.
+const rollDone = ref(false)
+const openingDone = ref(false)
+const spokenBefore = ref<string[]>([])
+const phase = computed(() => (!rollDone.value ? 'roll' : !openingDone.value ? 'opening' : 'main'))
+
+async function loadFlow(sid: string) {
+  const { data: all, error: e } = await supabase.from('cmd_sessions').select('id').eq('committee_id', committeeId)
+  if (e || !all) return
+  const ids = all.map((x) => x.id)
+  const [l, sp] = await Promise.all([
+    supabase.from('cmd_log').select('session_id, kind').in('session_id', ids).in('kind', ['roll_done', 'opening_done']),
+    supabase.from('cmd_speakers').select('session_id, delegate_id').in('session_id', ids).eq('list', 'single').is('motion_id', null).not('finished_at', 'is', null),
+  ])
+  if (l.error || sp.error) return // offline: keep what we have
+  rollDone.value = l.data.some((x) => x.session_id === sid && x.kind === 'roll_done')
+  openingDone.value = l.data.some((x) => x.kind === 'opening_done')
+  spokenBefore.value = sp.data.filter((x) => x.session_id !== sid).map((x) => x.delegate_id)
+}
+
+async function mark(kind: 'roll_done' | 'opening_done', label: string) {
+  const sid = session.value!.id
+  const saved = db.insert('cmd_log', { session_id: sid, actor_id: auth.session?.user.id, kind, data: {} }).done
+  pushUndo(label, () => db.remove('cmd_log', { session_id: sid, kind }))
+  await saved
+}
+function finishRoll() {
+  panel.value = ''
+  if (!rollDone.value) mark('roll_done', t('roll.undo'))
+}
+
+// A new session starts with the roll call of the last one that had any.
+async function carryAttendance(sid: string) {
+  const { data: last } = await supabase.from('cmd_sessions').select('id')
+    .eq('committee_id', committeeId).neq('id', sid).order('started_at', { ascending: false }).limit(5)
+  if (!last?.length) return
+  const ids = last.map((x) => x.id)
+  const { data: rows } = await supabase.from('cmd_attendance').select('session_id, delegate_id, status').in('session_id', ids)
+  const from = ids.find((id) => rows?.some((r) => r.session_id === id))
+  if (!from) return
+  const copy = rows!.filter((r) => r.session_id === from).map((r) => ({ session_id: sid, delegate_id: r.delegate_id, status: r.status }))
+  await db.upsert('cmd_attendance', copy, 'session_id,delegate_id')
+}
+
 // ---- optimistic local state ----
 type Row = Record<string, unknown>
 const hit = (r: Row, m?: Record<string, unknown>) => !m || Object.entries(m).every(([k, v]) => r[k] === v)
@@ -115,6 +163,7 @@ function applyArr<T extends Row>(list: Ref<T[]>, op: Op, key: string[] = ['id'])
 }
 function applyLocal(op: Op) {
   if (!session.value) return
+  now.value = Date.now() // redraw timers on the action itself, not on the next tick
   switch (op.table) {
     case 'cmd_speakers': return applyArr(speakers as Ref<Row[]>, op)
     case 'cmd_motions': return applyArr(motions as Ref<Row[]>, op)
@@ -125,6 +174,12 @@ function applyLocal(op: Op) {
       if (op.kind === 'delete') delete next[op.match?.delegate_id as string]
       else for (const r of (Array.isArray(op.payload) ? op.payload : [op.payload]) as Row[]) next[r.delegate_id as string] = r.status as Status
       attendance.value = next
+      return
+    }
+    case 'cmd_log': {
+      const row = (op.kind === 'delete' ? op.match : op.payload) as Row
+      if (row.kind === 'roll_done') rollDone.value = op.kind !== 'delete'
+      if (row.kind === 'opening_done') openingDone.value = op.kind !== 'delete'
       return
     }
     case 'cmd_sessions':
@@ -158,6 +213,7 @@ function subscribe() {
   const reload = () => { if (!pending.value.length) refreshAll() }
   channel = supabase.channel(`cmd-${sid}`)
     .on('postgres_changes', f('cmd_attendance'), reload)
+    .on('postgres_changes', f('cmd_log'), reload)
     .on('postgres_changes', f('cmd_speakers'), reload)
     .on('postgres_changes', f('cmd_sessions', 'id'), reload)
     .on('postgres_changes', f('cmd_motions'), reload)
@@ -175,6 +231,7 @@ async function refreshAll() {
     supabase.from('cmd_motions').select('*').eq('session_id', sid).order('created_at'),
     supabase.from('cmd_votes').select('*').eq('session_id', sid).order('created_at'),
     supabase.from('cmd_sessions').select('id, title, agenda, speaker_seconds, status').eq('id', sid).single(),
+    loadFlow(sid),
   ])
   if (a.error || s.error || m.error || v.error) return // offline: keep what we have
   attendance.value = Object.fromEntries((a.data ?? []).map((r) => [r.delegate_id, r.status as Status]))
@@ -190,16 +247,95 @@ async function refreshAll() {
 watch(() => pending.value.length, (n, o) => { if (o > 0 && n === 0) refreshAll() })
 watch(rt, (s, o) => { if (s === 'SUBSCRIBED' && o) { flush(); refreshAll() } })
 
+const ylClose = ref<HTMLButtonElement | null>(null)
+watch(panel, async (v) => {
+  if (v !== 'yield') return
+  await nextTick()
+  ylClose.value?.focus()
+})
+
+// The bottom menu gets out of the way by itself. It comes back when the mouse goes
+// down to the bottom edge or the wheel scrolls down. Touch screens keep it visible.
+const noHover = window.matchMedia('(hover: none)').matches
+const menuShown = ref(true)
+const menuEl = ref<HTMLElement | null>(null)
+let menuTimer: ReturnType<typeof setTimeout>
+function hideMenuSoon() {
+  clearTimeout(menuTimer)
+  if (noHover) return
+  menuTimer = setTimeout(() => {
+    // Stay while the pointer rests on it or the keyboard is inside it.
+    if (menuEl.value?.matches(':hover') || menuEl.value?.querySelector(':focus-visible')) return hideMenuSoon()
+    menuShown.value = false
+  }, 2000)
+}
+function showMenu() {
+  menuShown.value = true
+  hideMenuSoon()
+}
+function onPointerMove(e: PointerEvent) {
+  if (e.clientY > window.innerHeight - 110) showMenu()
+}
+function onWheel(e: WheelEvent) {
+  if (e.deltaY > 0) showMenu()
+}
+onMounted(() => {
+  window.addEventListener('pointermove', onPointerMove)
+  window.addEventListener('wheel', onWheel, { passive: true })
+  hideMenuSoon()
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('pointermove', onPointerMove)
+  window.removeEventListener('wheel', onWheel)
+  clearTimeout(menuTimer)
+})
+// The countdown starts when the menu first appears, not while roll call is up.
+watch(phase, (v) => { if (v === 'main') showMenu() })
+// Something is waiting in a tab: shown on the button while the menu is hidden.
+const attention = computed(() =>
+  motions.value.some((x) => x.status === 'active' || x.status === 'pending') || votes.value.some((x) => x.status === 'open'),
+)
+
+// With no agenda adopted, the header says what the committee is doing instead.
+const stageName = computed(() => {
+  if (phase.value === 'roll' || panel.value === 'roll') return t('session.rollCall')
+  if (phase.value === 'opening') return t('opening.title')
+  if (tab.value === 'gsl') return 'General Speakers’ List'
+  if (tab.value === 'motions' || tab.value === 'vote') return t('session.tabs.' + tab.value)
+  return t('modes.kind.' + tab.value)
+})
+
+// Leaving a screen stops its clock, so no time runs out of sight.
+function pauseTimers() {
+  for (const s of speakers.value) if (s.running_since && !s.finished_at) ops.toggleTimer(s)
+  for (const m of motions.value) {
+    if (!m.running_since) continue
+    const elapsed = m.elapsed_ms + Math.max(0, Date.now() - new Date(m.running_since).getTime())
+    db.update('cmd_motions', { elapsed_ms: elapsed, running_since: null }, { id: m.id })
+  }
+}
+watch(tab, pauseTimers)
+watch(() => panel.value === 'roll', (open) => { if (open) pauseTimers() })
+
+const HEAD_KEY = 'cmd-head-open'
+const headOpen = ref(false)
+try { headOpen.value = localStorage.getItem(HEAD_KEY) === '1' } catch { /* storage unavailable */ }
+function toggleHead() {
+  headOpen.value = !headOpen.value
+  try { localStorage.setItem(HEAD_KEY, headOpen.value ? '1' : '0') } catch { /* storage unavailable */ }
+}
+
 function onKey(e: KeyboardEvent) {
   const el = e.target as HTMLElement | null
   if (el && ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName)) return
+  if (e.key === 'Escape' && panel.value === 'yield') panel.value = ''
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undoLast() }
 }
 
 onMounted(async () => {
   document.addEventListener('fullscreenchange', onFull)
   document.addEventListener('keydown', onKey)
-  tick = setInterval(() => (now.value = Date.now()), 250)
+  tick = setInterval(() => (now.value = Date.now()), 100)
   offLocal = onLocal(applyLocal)
   const [c, d] = await Promise.all([
     supabase.from('cmd_committees').select('name').eq('id', committeeId).single(),
@@ -225,10 +361,15 @@ async function start() {
     .select('id, title, agenda, speaker_seconds, status').single()
   if (e) { error.value = t('session.needOnline'); return }
   error.value = ''
+  loading.value = true
+  resetState()
   session.value = data
   secondsDraft.value = data.speaker_seconds
-  subscribe()
   log('session_started')
+  await carryAttendance(data.id)
+  await refreshAll()
+  subscribe()
+  loading.value = false
 }
 
 function setStatus(d: Delegate, status: Status) {
@@ -260,9 +401,21 @@ function endSession() {
   db.update('cmd_sessions', { status: 'closed', ended_at: new Date().toISOString() }, { id: sid })
   if (channel) { supabase.removeChannel(channel); channel = null }
   session.value = null
+  resetState()
+  clearUndo()
+}
+function resetState() {
   attendance.value = {}
   speakers.value = []
-  clearUndo()
+  motions.value = []
+  votes.value = []
+  ballots.value = []
+  rollDone.value = false
+  openingDone.value = false
+  spokenBefore.value = []
+  gslReady.value = false
+  panel.value = ''
+  tab.value = 'gsl'
 }
 
 function saveAgenda() {
@@ -311,6 +464,13 @@ function nextSpeaker() {
   ops.finish(s, t('undo.nextSpeaker', { c: country(s.delegate_id) }))
   log('speaker_done', { country: country(s.delegate_id) })
 }
+const previous = computed(() => ops.lastFinished(speakers.value, 'gsl'))
+function previousSpeaker() {
+  const s = previous.value
+  if (!s) return
+  pushUndo(t('undo.previousSpeaker', { c: country(s.delegate_id) }), ops.reopen(s, queue.value))
+  panel.value = ''
+}
 function yieldChair() {
   if (!current.value) return
   ops.yieldToChair(current.value, t('undo.yield'))
@@ -331,7 +491,6 @@ function yieldDelegate(d: Delegate) {
   panel.value = ''
 }
 
-const statuses: Status[] = ['present', 'present_voting', 'absent']
 const tabs = ['gsl', 'motions', 'mod', 'unmod', 'single', 'vote'] as const
 type Tab = (typeof tabs)[number]
 const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.value = x as Tab }
@@ -351,6 +510,7 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
       <button class="lang" :disabled="!canUndo" :title="canUndo ? lastLabel : ''" @click="undoLast"><Undo2 :size="16" /> {{ t('session.undo') }}<template v-if="canUndo"> · {{ lastLabel }}</template></button>
       <button class="lang" :aria-pressed="soundOn" :aria-label="t('session.sound')" :title="t('session.sound')" @click="toggleSound"><Bell v-if="soundOn" :size="16" /><BellOff v-else :size="16" /></button>
       <button class="lang" :aria-pressed="full" @click="toggleFull">{{ full ? t('session.exitFull') : t('session.fullscreen') }}</button>
+      <ThemeToggle />
     </div>
     <p v-if="netState === 'offline'" class="offline" role="alert">{{ t('net.offlineHelp') }}</p>
     <p v-if="loading" class="muted">…</p>
@@ -363,10 +523,21 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
     </div>
 
     <template v-if="session">
-      <header class="top card">
+      <!-- Folded by default so the speaker screen fits without scrolling. -->
+      <header v-if="!headOpen" class="mini-head card">
+        <span class="label">{{ t('session.agenda') }}</span>
+        <strong>{{ session.agenda || stageName }}</strong>
+        <span class="mh-counts" :aria-label="t('session.attendance')">
+          <span class="p" :title="t('session.present')">{{ counts.present }}</span>
+          <span class="v" :title="t('session.voting')">{{ counts.voting }}</span>
+          <span class="a" :title="t('session.absent')">{{ counts.absent }}</span>
+        </span>
+        <button class="head-btn" :aria-expanded="false" :aria-label="t('session.showHead')" :title="t('session.showHead')" @click="toggleHead"><ChevronDown :size="18" /></button>
+      </header>
+      <header v-else class="top card rise">
         <div class="agenda">
           <span class="label">{{ t('session.agenda') }}</span>
-          <strong :class="{ none: !session.agenda }">{{ session.agenda || t('session.noAgenda') }}</strong>
+          <strong>{{ session.agenda || stageName }}</strong>
         </div>
         <div class="side">
         <div class="counts" :aria-label="t('session.attendance')">
@@ -376,8 +547,9 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
         </div>
         <div class="actions">
           <button class="lang" @click="panel = panel === 'agenda' ? '' : 'agenda'">{{ t('session.setAgenda') }}</button>
-          <button class="btn small" @click="panel = panel === 'roll' ? '' : 'roll'">{{ t('session.rollCall') }}</button>
+          <button v-if="phase !== 'roll'" class="btn small" @click="panel = panel === 'roll' ? '' : 'roll'">{{ t('session.rollCall') }}</button>
           <button class="lang end" @click="endSession">{{ t('session.end') }}</button>
+          <button class="head-btn" :aria-expanded="true" :aria-label="t('session.hideHead')" :title="t('session.hideHead')" @click="toggleHead"><ChevronUp :size="18" /></button>
         </div>
         </div>
       </header>
@@ -389,26 +561,29 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
         </form>
       </div>
 
-      <div v-if="panel === 'roll'" class="card pad">
-        <div class="rollhead">
-          <h2>{{ t('session.rollCall') }}</h2>
-          <span class="muted">
-            <button class="lang" @click="markAll('present')">{{ t('session.allPresent') }}</button>
-          </span>
+      <RollCall
+        v-if="phase === 'roll' || panel === 'roll'" :delegates="delegates" :attendance="attendance"
+        :done-label="t(phase === 'roll' ? 'roll.done' : 'roll.back')"
+        @status="setStatus" @all="markAll('present')" @done="finishRoll"
+      />
+      <OpeningSpeech
+        v-else-if="phase === 'opening'" :session-id="session.id" :delegates="delegates" :attendance="attendance"
+        :speakers="speakers" :spoken-before="spokenBefore" :now="now" @log="log" @finish="mark('opening_done', t('opening.undoEnd'))"
+      />
+      <template v-else>
+      <div v-if="tab === 'gsl' && gslSetup" class="gs rise">
+        <div class="gs-head">
+          <h2>{{ t('session.addSpeakers') }}</h2>
+          <button class="btn gs-go" :disabled="!queue.length" @click="gslReady = true">{{ t('session.startSpeeches') }}<ArrowRight :size="18" /></button>
         </div>
-        <ul class="roll">
-          <li v-for="d in delegates" :key="d.id">
-            <span class="who"><strong><CountryFlag :name="d.country" />{{ d.country }}</strong><small class="muted">{{ d.display_name }}</small></span>
-            <span class="seg">
-              <button v-for="s in statuses" :key="s" :class="[s, { on: attendance[d.id] === s }]" :aria-pressed="attendance[d.id] === s" @click="setStatus(d, s)">
-                {{ t('session.short.' + s) }}
-              </button>
-            </span>
-          </li>
-        </ul>
+        <SpeakerAdd
+          :delegates="presentDelegates" :by-id="byId" :queue="queue" @add="addSpeaker"
+          @move="(s, dir) => ops.moveSpeaker(queue, s, dir, t('undo.moveSpeaker'))"
+          @remove="(s) => ops.removeSpeaker(s, t('undo.removeSpeaker', { c: country(s.delegate_id) }))"
+        />
       </div>
 
-      <div v-if="tab === 'gsl'">
+      <div v-else-if="tab === 'gsl'" class="rise">
         <SpeakerStage
           can-settings can-yield v-model:settings-open="settingsOpen"
           :current="current ? country(current.delegate_id) : null"
@@ -417,7 +592,7 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
           :yielded-to="current?.yielded_to" :yielded-from="current?.yielded_from ? country(current.yielded_from) : null"
           @play="current && ops.toggleTimer(current)" @reset="current && ops.resetTimer(current, t('undo.resetTimer'))"
           @adjust="(sec) => current && ops.adjustTime(current, sec, t('undo.adjustTime'))"
-          @done="nextSpeaker" @yield="panel = panel === 'yield' ? '' : 'yield'"
+          @done="nextSpeaker" :can-previous="!!previous" @previous="previousSpeaker" @yield="panel = panel === 'yield' ? '' : 'yield'"
         >
           <template #settings="{ close }">
             <form class="sform" @submit.prevent="saveSeconds">
@@ -444,39 +619,32 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
           </template>
         </SpeakerStage>
 
-        <div v-if="panel === 'yield' && current" class="card pad yieldbox">
-          <h3>{{ t('session.yieldTitle', { c: country(current.delegate_id) }) }}</h3>
-          <div class="yopts">
-            <button class="lang" @click="yieldChair">{{ t('session.yieldChair') }}</button>
-            <button class="lang" @click="yieldQuestions">{{ t('session.yieldToQuestions') }}</button>
+        <div v-if="panel === 'yield' && current" class="yl-back" @click.self="panel = ''">
+          <div class="yl-box" role="dialog" aria-modal="true" aria-labelledby="yl-title">
+            <div class="yl-head">
+              <h3 id="yl-title">{{ t('session.yieldTitle', { c: country(current.delegate_id) }) }}</h3>
+              <button ref="ylClose" class="yl-close" :aria-label="t('modes.cancel')" :title="t('modes.cancel') + ' (Esc)'" @click="panel = ''"><X :size="20" /></button>
+            </div>
+            <div class="yl-opts">
+              <button class="lang" @click="yieldChair">{{ t('session.yieldChair') }}</button>
+              <button class="lang" @click="yieldQuestions">{{ t('session.yieldToQuestions') }}</button>
+            </div>
+            <p class="muted small">{{ t('session.yieldDelegate') }}</p>
+            <ul class="pick pgrid">
+              <li v-for="d in yieldTargets" :key="d.id"><button @click="yieldDelegate(d)"><span><CountryFlag :name="d.country" />{{ d.country }}</span><ArrowRight :size="16" /></button></li>
+            </ul>
           </div>
-          <p class="muted small">{{ t('session.yieldDelegate') }}</p>
-          <ul class="pick pgrid">
-            <li v-for="d in yieldTargets" :key="d.id"><button @click="yieldDelegate(d)"><CountryFlag :name="d.country" />{{ d.country }}<ArrowRight :size="16" /></button></li>
-          </ul>
         </div>
 
         <div class="manage"><button class="lang" :aria-expanded="manage" @click="manage = !manage">{{ manage ? t('session.hideManage') : t('session.manage') }}</button></div>
-        <div v-if="manage" class="card pad add">
-          <ul v-if="upcoming.length" class="c-rows soft">
-            <li v-for="(s, i) in upcoming" :key="s.id">
-              <span>{{ i + 2 }}. <CountryFlag :name="country(s.delegate_id)" />{{ country(s.delegate_id) }}</span>
-              <span class="c-acts">
-                <button class="x" :disabled="i === 0" :aria-label="t('session.moveUp')" @click="ops.moveSpeaker(queue, s, -1, t('undo.moveSpeaker'))"><ArrowUp :size="16" /></button>
-                <button class="x" :disabled="i === upcoming.length - 1" :aria-label="t('session.moveDown')" @click="ops.moveSpeaker(queue, s, 1, t('undo.moveSpeaker'))"><ArrowDown :size="16" /></button>
-                <button class="x" :aria-label="t('session.remove')" @click="ops.removeSpeaker(s, t('undo.removeSpeaker', { c: country(s.delegate_id) }))"><X :size="16" /></button>
-              </span>
-            </li>
-          </ul>
-          <input v-model="search" type="search" :placeholder="t('session.search')" :disabled="!rolled" />
-          <p v-if="!rolled" class="muted">{{ t('session.rollFirst') }}</p>
-          <ul v-else class="pick pgrid">
-            <li v-for="d in addable" :key="d.id"><button @click="addSpeaker(d)"><CountryFlag :name="d.country" />{{ d.country }}<Plus :size="16" /></button></li>
-          </ul>
-        </div>
+        <SpeakerAdd
+          v-if="manage" class="rise" :delegates="presentDelegates" :by-id="byId" :queue="upcoming" :first-number="2" @add="addSpeaker"
+          @move="(s, dir) => ops.moveSpeaker(queue, s, dir, t('undo.moveSpeaker'))"
+          @remove="(s) => ops.removeSpeaker(s, t('undo.removeSpeaker', { c: country(s.delegate_id) }))"
+        />
       </div>
 
-      <div v-if="tab !== 'gsl'" class="modes">
+      <div v-if="tab !== 'gsl'" :key="tab" class="modes rise">
         <MotionsTab
           v-if="tab === 'motions'" :session-id="session.id" :motions="motions" :delegates="delegates" :attendance="attendance"
           :default-seconds="session.speaker_seconds" @log="log" @goto="goto"
@@ -492,7 +660,7 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
         />
       </div>
 
-      <nav class="tabbar" :aria-label="t('session.modes')">
+      <nav ref="menuEl" class="tabbar" :class="{ away: !menuShown }" :aria-label="t('session.modes')" @focusin="showMenu">
         <button v-for="m in tabs" :key="m" :class="{ on: m === tab }" :aria-current="m === tab" @click="tab = m">
           {{ t('session.tabs.' + m) }}
           <i v-if="m !== 'gsl' && m !== 'motions' && m !== 'vote' && motions.some((x) => x.kind === m && x.status === 'active')" class="dot" />
@@ -500,6 +668,11 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
           <i v-else-if="m === 'motions' && motions.some((x) => x.status === 'pending')" class="dot warn" />
         </button>
       </nav>
+      <!-- Small handle that says the menu is there; a dot if a tab needs attention. -->
+      <button class="tb-handle" :class="{ away: menuShown }" tabindex="-1" :aria-label="t('session.showMenu')" @click="showMenu">
+        <i v-if="attention" class="dot warn" />
+      </button>
+    </template>
     </template>
   </section>
 </template>
@@ -510,11 +683,11 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
 .strip .back { text-decoration: none; font-size: 22px; line-height: 1; padding: 4px 10px; border-radius: 10px; color: var(--text-muted) }
 .strip .back:hover { background: var(--cream-deep) }
 .strip .grow { flex: 1 }
-.net { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; padding: 5px 10px; border-radius: 999px; background: #e6f2ea; color: var(--success-text) }
+.net { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; padding: 5px 10px; border-radius: 999px; background: var(--success-soft); color: var(--success-text) }
 .net i { width: 8px; height: 8px; border-radius: 50%; background: #3e7c4f }
 .net.offline { background: var(--danger-soft); color: var(--danger) }
 .net.offline i { background: var(--danger) }
-.net.reconnecting, .net.syncing { background: #fbf0d9; color: #8a5b0a }
+.net.reconnecting, .net.syncing { background: var(--warn-soft); color: var(--warn-text) }
 .net.reconnecting i, .net.syncing i { background: #d99a2b; animation: blink 1s infinite }
 @keyframes blink { 50% { opacity: .3 } }
 .offline { background: var(--danger-soft); border: 1px solid var(--danger-line); color: var(--danger); border-radius: 10px; padding: 8px 14px; margin: 0 0 10px; font-weight: 600 }
@@ -532,9 +705,6 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
 .chk { display: flex; align-items: flex-start; gap: 10px; font-weight: 500; font-size: 14px; cursor: pointer }
 .chk input { min-height: 0; width: 18px; height: 18px; margin-top: 1px; accent-color: var(--accent) }
 .sact { display: flex; justify-content: flex-end; gap: 8px }
-.yieldbox { margin-top: 14px }
-.yieldbox h3 { margin: 0 0 10px }
-.yopts { display: flex; gap: 8px; flex-wrap: wrap }
 .small { font-size: 13px }
 .lang:disabled { opacity: .45; cursor: default }
 .cname { font-family: var(--font-display); font-size: 1.15rem }
@@ -545,14 +715,13 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
 .side { display: grid; gap: 10px; justify-items: end; margin-left: auto }
 .side .actions { flex-wrap: wrap; justify-content: flex-end }
 .agenda strong { font-family: var(--font-display); font-size: clamp(1.6rem, 3.6vw, 2.8rem); line-height: 1.1 }
-.agenda strong.none { color: var(--text-tertiary); font-size: clamp(1.2rem, 2.4vw, 1.8rem) }
 .manage { display: flex; justify-content: flex-end; margin: 12px 0 }
 .pgrid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); max-height: 40vh }
 .label { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-tertiary); font-weight: 700 }
 .counts { display: flex; gap: 8px }
 .count { display: grid; place-items: center; min-width: 72px; padding: 6px 10px; border-radius: 12px; font-size: 12px; font-weight: 600 }
 .count b { font-size: 22px; font-family: var(--font-display) }
-.count.p { background: var(--success-soft, #e6f2ea); color: var(--success-text) }
+.count.p { background: var(--success-soft); color: var(--success-text) }
 .count.v { background: var(--info-soft); color: var(--info) }
 .count.a { background: var(--danger-soft); color: var(--danger) }
 .actions { display: flex; gap: 8px; align-items: center }
@@ -561,16 +730,6 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
 .inline { display: flex; gap: 10px; max-width: none }
 .inline input { flex: 1 }
 .row { display: flex; align-items: center; gap: 10px }
-.rollhead { display: flex; justify-content: space-between; align-items: center }
-.rollhead h2 { margin: 0 }
-.roll { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 6px }
-.roll li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; background: var(--cream); flex-wrap: wrap }
-.who { display: grid }
-.seg { display: flex; gap: 6px }
-.seg button { border: 1px solid var(--divider); background: var(--white); border-radius: 8px; padding: 6px 12px; font: inherit; font-weight: 700; cursor: pointer }
-.seg .present.on { background: #3e7c4f; color: #fff; border-color: #3e7c4f }
-.seg .present_voting.on { background: var(--info); color: #fff; border-color: var(--info) }
-.seg .absent.on { background: var(--danger); color: #fff; border-color: var(--danger) }
 .grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; margin-top: 18px; align-items: start }
 .clock { font-family: var(--font-display); font-size: clamp(3rem, 9vw, 5.5rem); font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; padding: 18px 0 }
 .clock span { color: var(--text-tertiary) }
@@ -584,7 +743,6 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
 .up-list { margin: 0; padding-left: 22px; display: grid; gap: 6px }
 .up-list li { padding-right: 4px }
 .x { float: right; border: 0; background: none; cursor: pointer; color: var(--text-tertiary); font-size: 18px }
-.add { display: grid; gap: 12px }
 .pick { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; max-height: 52vh; overflow: auto }
 .pick button { width: 100%; display: flex; justify-content: space-between; border: 1px solid var(--divider); background: var(--white); border-radius: 10px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer }
 .pick button:hover { border-color: var(--accent); background: var(--accent-soft) }
@@ -594,6 +752,33 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
 .tabbar button.on { background: var(--accent); color: #fff }
 .dot { position: absolute; top: 5px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: #3e7c4f; box-shadow: 0 0 0 2px var(--white) }
 .dot.warn { background: #d99a2b }
+.tabbar { transition: opacity .2s ease, translate .25s var(--ease-out) }
+.tabbar.away { opacity: 0; translate: 0 calc(100% + 30px); pointer-events: none }
+.tb-handle { position: fixed; z-index: 19; left: 0; right: 0; bottom: 8px; width: 120px; height: 8px; margin: 0 auto; padding: 0; border: 0; border-radius: 999px; background: var(--text-tertiary); opacity: .5; cursor: pointer; transition: opacity .2s ease }
+.tb-handle.away { opacity: 0; pointer-events: none }
+.tb-handle .dot { top: -2px; right: -14px }
+.yl-back { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / .5); backdrop-filter: blur(3px) }
+.yl-box { display: flex; flex-direction: column; gap: 12px; width: min(760px, 100%); max-height: calc(100vh - 32px); padding: 22px; border-radius: 22px; background: var(--white); border: 1px solid var(--divider); box-shadow: var(--shadow-lg); animation: rise .2s var(--ease-out) backwards }
+.yl-head { display: flex; justify-content: space-between; align-items: center; gap: 12px }
+.yl-head h3 { margin: 0; font-size: 1.3rem }
+.yl-close { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 999px; background: var(--cream-deep); color: var(--text); cursor: pointer }
+.yl-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px }
+.yl-opts button { justify-content: center; min-height: 52px; border-radius: 999px }
+.yl-box p { margin: 4px 0 0 }
+.yl-box .pick { min-height: 0; overflow: auto }
+.gs { margin-top: 18px }
+.gs-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px }
+.gs-head h2 { margin: 0 }
+.gs-go { gap: 8px; border-radius: 999px }
+.mini-head { display: flex; align-items: center; gap: 12px; margin-top: 4px; padding: 8px 10px 8px 18px }
+.mini-head strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-size: 1.15rem }
+.mh-counts { display: flex; gap: 6px }
+.mh-counts span { min-width: 34px; padding: 3px 10px; border-radius: 999px; text-align: center; font-weight: 700; font-size: 14px }
+.mh-counts .p { background: var(--success-soft); color: var(--success-text) }
+.mh-counts .v { background: var(--info-soft); color: var(--info) }
+.mh-counts .a { background: var(--danger-soft); color: var(--danger) }
+.head-btn { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--divider); border-radius: 50%; background: var(--white); color: var(--text); cursor: pointer }
+.head-btn:hover { background: var(--cream-deep) }
 .modes { margin-top: 18px }
 @media (max-width: 820px) { .grid { grid-template-columns: 1fr } }
 </style>

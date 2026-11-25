@@ -158,7 +158,7 @@ async function remove(s: Staff) {
 .back { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); text-decoration: none; margin-top: 4px }
 .pagehead { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap }
 .pagehead p { margin: 0 }
-.toast { position: sticky; top: 84px; z-index: 12; display: flex; align-items: center; gap: 8px; width: fit-content; margin: 10px 0; padding: 10px 16px; border-radius: 12px; background: #e6f2ea; color: var(--success-text); border: 1px solid #b9d9c3; font-weight: 600; box-shadow: var(--shadow-md) }
+.toast { position: sticky; top: 84px; z-index: 12; display: flex; align-items: center; gap: 8px; width: fit-content; margin: 10px 0; padding: 10px 16px; border-radius: 12px; background: var(--success-soft); color: var(--success-text); border: 1px solid var(--success-line); font-weight: 600; box-shadow: var(--shadow-md) }
 .toast.bad { background: var(--danger-soft); color: var(--danger); border-color: var(--danger-line) }
 .toast-enter-active, .toast-leave-active { transition: opacity .2s ease, transform .2s var(--ease-out) }
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(-8px) }
@@ -179,7 +179,7 @@ async function remove(s: Staff) {
 @keyframes spin { to { transform: rotate(360deg) } }
 .sec { margin: 26px 0 10px; font-size: .8rem; text-transform: uppercase; letter-spacing: .07em; color: var(--text-tertiary) }
 .block { margin-top: 18px; padding: 16px; border-radius: 14px }
-.block.warn { background: #fbf0d9; border: 1px solid #ecd49a }
+.block.warn { background: var(--warn-soft); border: 1px solid var(--warn-line) }
 .block h3 { margin: 0; font-size: 1rem; display: flex; align-items: center; gap: 8px }
 .block .small { margin: 2px 0 10px }
 .count { background: #d99a2b; color: #fff; border-radius: 999px; padding: 1px 9px; font-size: 12px }

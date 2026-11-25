@@ -30,22 +30,22 @@
 .c-rows li { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: 10px; background: var(--cream) }
 .c-rows.soft li { background: transparent; border: 1px solid var(--divider) }
 .c-acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap }
-.c-acts .ok { background: #e6f2ea; color: var(--success-text); border-color: #b9d9c3 }
+.c-acts .ok { background: var(--success-soft); color: var(--success-text); border-color: var(--success-line) }
 .c-acts .no { background: var(--danger-soft); color: var(--danger); border-color: var(--danger-line) }
 .tag { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 3px 10px; background: var(--cream-deep); color: var(--text-muted) }
-.tag.passed, .tag.done { background: #e6f2ea; color: var(--success-text) }
+.tag.passed, .tag.done { background: var(--success-soft); color: var(--success-text) }
 .tag.failed { background: var(--danger-soft); color: var(--danger) }
 .c-tally { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 16px 0 }
 .c-tally span { display: grid; place-items: center; padding: 10px; border-radius: 12px; font-size: 12px; font-weight: 700; background: var(--cream-deep) }
 .c-tally b { font-family: var(--font-display); font-size: 28px }
-.c-tally .y { background: #e6f2ea; color: var(--success-text) }
+.c-tally .y { background: var(--success-soft); color: var(--success-text) }
 .c-tally .n { background: var(--danger-soft); color: var(--danger) }
 .c-tally .a { background: var(--info-soft); color: var(--info) }
 .c-seg { display: flex; gap: 6px }
 .c-seg button { border: 1px solid var(--divider); background: var(--white); border-radius: 8px; padding: 6px 12px; font: inherit; font-weight: 700; cursor: pointer }
 .c-seg .y.on { background: #3e7c4f; color: #fff; border-color: #3e7c4f }
-.c-seg .n.on { background: var(--danger); color: #fff; border-color: var(--danger) }
-.c-seg .a.on { background: var(--info); color: #fff; border-color: var(--info) }
+.c-seg .n.on { background: var(--danger); color: var(--on-strong); border-color: var(--danger) }
+.c-seg .a.on { background: var(--info); color: var(--on-strong); border-color: var(--info) }
 .c-seg button:disabled { opacity: .4; cursor: not-allowed }
 
 /* Lucide icons: centre them inside buttons and links */

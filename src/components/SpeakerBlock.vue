@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import CountryFlag from '@/components/CountryFlag.vue'
-import { ArrowUp, ArrowDown, X, Plus } from 'lucide-vue-next'
+import { ArrowRight } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { fmt, left } from '@/lib/time'
@@ -8,6 +7,7 @@ import * as ops from '@/lib/speakerOps'
 import { db } from '@/lib/db'
 import { pushUndo } from '@/lib/undo'
 import SpeakerStage from './SpeakerStage.vue'
+import SpeakerAdd from './SpeakerAdd.vue'
 import type { Delegate, Speaker, Status } from '@/lib/types'
 
 const props = defineProps<{
@@ -23,8 +23,12 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ log: [kind: string, data: Record<string, unknown>] }>()
 const { t } = useI18n()
-const search = ref('')
 const manage = ref(false)
+// Until the first speech starts, the caucus opens on the list builder.
+const ready = ref(false)
+const setup = computed(() =>
+  !ready.value && !props.speakers.some((s) => s.list === props.list && s.motion_id === props.motionId && (s.finished_at || s.running_since || s.elapsed_ms > 0)),
+)
 
 const byId = computed(() => Object.fromEntries(props.delegates.map((d) => [d.id, d])))
 const queue = computed(() =>
@@ -39,12 +43,7 @@ const remaining = computed(() =>
     ? left(current.value.duration_seconds * 1000, current.value.elapsed_ms, current.value.running_since, props.now)
     : props.seconds * 1000,
 )
-const addable = computed(() => {
-  const q = search.value.trim().toLowerCase()
-  return props.delegates.filter(
-    (d) => props.attendance[d.id] && props.attendance[d.id] !== 'absent' && d.country.toLowerCase().includes(q),
-  )
-})
+const presentDelegates = computed(() => props.delegates.filter((d) => props.attendance[d.id] && props.attendance[d.id] !== 'absent'))
 const canAdd = computed(() => props.list === 'mod' || queue.value.length === 0)
 const country = (s: Speaker) => byId.value[s.delegate_id]?.country ?? '—'
 
@@ -53,6 +52,22 @@ function add(d: Delegate) {
     list: props.list, motion_id: props.motionId,
   })
   emit('log', 'speaker_added', { country: d.country })
+}
+const previous = computed(() => ops.lastFinished(props.speakers, props.list, props.motionId))
+function goBack() {
+  const s = previous.value
+  if (!s) return
+  const label = t('undo.previousSpeaker', { c: country(s) })
+  const undoSpeaker = ops.reopen(s, queue.value)
+  let undoTotal = () => {}
+  if (props.list === 'mod') {
+    // Give back the caucus time that next() took off for this speaker.
+    const used = Math.min(s.elapsed_ms, s.duration_seconds * 1000)
+    const before = props.motionElapsed ?? 0
+    db.update('cmd_motions', { elapsed_ms: Math.max(0, before - used) }, { id: props.motionId })
+    undoTotal = () => db.update('cmd_motions', { elapsed_ms: before }, { id: props.motionId })
+  }
+  pushUndo(label, () => { undoTotal(); undoSpeaker() })
 }
 function next() {
   const s = current.value
@@ -73,7 +88,19 @@ function next() {
 </script>
 
 <template>
-  <div>
+  <div v-if="setup" class="sb-setup rise">
+    <div class="sb-head">
+      <h2>{{ t('session.addSpeakers') }}</h2>
+      <button class="btn sb-go" :disabled="!queue.length" @click="ready = true">{{ t('session.startSpeeches') }}<ArrowRight :size="18" /></button>
+    </div>
+    <SpeakerAdd
+      :delegates="presentDelegates" :by-id="byId" :queue="queue"
+      :closed-text="canAdd ? undefined : t('modes.singleTaken')" @add="add"
+      @move="(s, dir) => ops.moveSpeaker(queue, s, dir, t('undo.moveSpeaker'))"
+      @remove="(s) => ops.removeSpeaker(s, t('undo.removeSpeaker', { c: country(s) }))"
+    />
+  </div>
+  <div v-else>
     <SpeakerStage
       :current="current ? country(current) : null"
       :clock="fmt(remaining)"
@@ -88,6 +115,8 @@ function next() {
       @reset="current && ops.resetTimer(current, t('undo.resetTimer'))"
       @adjust="(s) => current && ops.adjustTime(current, s, t('undo.adjustTime'))"
       @done="next"
+      :can-previous="!!previous"
+      @previous="goBack"
     />
 
     <div class="manage">
@@ -96,27 +125,19 @@ function next() {
       </button>
     </div>
 
-    <div v-if="manage" class="c-card c-add">
-      <ul v-if="upcoming.length" class="c-rows soft">
-        <li v-for="(s, i) in upcoming" :key="s.id">
-          <span>{{ i + 2 }}. <CountryFlag :name="country(s)" />{{ country(s) }}</span>
-          <span class="c-acts">
-            <button class="c-x" :disabled="i === 0" :aria-label="t('session.moveUp')" @click="ops.moveSpeaker(queue, s, -1, t('undo.moveSpeaker'))"><ArrowUp :size="16" /></button>
-            <button class="c-x" :disabled="i === upcoming.length - 1" :aria-label="t('session.moveDown')" @click="ops.moveSpeaker(queue, s, 1, t('undo.moveSpeaker'))"><ArrowDown :size="16" /></button>
-            <button class="c-x" :aria-label="t('session.remove')" @click="ops.removeSpeaker(s, t('undo.removeSpeaker', { c: country(s) }))"><X :size="16" /></button>
-          </span>
-        </li>
-      </ul>
-      <input v-model="search" type="search" :placeholder="t('session.search')" />
-      <p v-if="!canAdd" class="muted">{{ t('modes.singleTaken') }}</p>
-      <ul v-else class="c-pick grid">
-        <li v-for="d in addable" :key="d.id"><button @click="add(d)"><CountryFlag :name="d.country" />{{ d.country }}<Plus :size="16" /></button></li>
-      </ul>
-    </div>
+    <SpeakerAdd
+      v-if="manage" class="rise" :delegates="presentDelegates" :by-id="byId" :queue="upcoming" :first-number="2"
+      :closed-text="canAdd ? undefined : t('modes.singleTaken')" @add="add"
+      @move="(s, dir) => ops.moveSpeaker(queue, s, dir, t('undo.moveSpeaker'))"
+      @remove="(s) => ops.removeSpeaker(s, t('undo.removeSpeaker', { c: country(s) }))"
+    />
   </div>
 </template>
 
 <style scoped>
+.sb-setup { margin-top: 18px }
+.sb-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px }
+.sb-head h2 { margin: 0 }
+.sb-go { gap: 8px; border-radius: 999px }
 .manage { display: flex; justify-content: flex-end; margin: 12px 0 }
-.c-pick.grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); max-height: 40vh }
 </style>

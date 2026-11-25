@@ -97,3 +97,30 @@ export function yieldToDelegate(
   })
   pushUndo(label, () => { db.remove(T, { id: row.id }); undoFinish() })
 }
+
+// The most recently finished speaker of a list, i.e. the one "previous" brings back.
+export const lastFinished = (all: Speaker[], list: Speaker['list'], motionId: string | null = null) =>
+  all.filter((s) => s.list === list && (list === 'gsl' || s.motion_id === motionId) && s.finished_at)
+    .sort((a, b) => Date.parse(b.finished_at!) - Date.parse(a.finished_at!))[0] ?? null
+
+// Puts a finished speaker back on the floor with the time they had left.
+// Whoever was speaking is paused and becomes next. Returns the revert function.
+export function reopen(prev: Speaker, queue: Speaker[]) {
+  const before = restore(prev)
+  const head = queue[0]
+  const headBefore = head ? restore(head) : null
+  // A delegate yield created an extra turn for the receiver; take it back too.
+  const yielded = prev.yielded_to === 'delegate' ? queue.find((x) => x.yielded_from === prev.delegate_id) : undefined
+  const yieldedCopy = yielded ? { ...yielded } : null
+  if (head?.running_since && head.id !== yielded?.id) {
+    db.update(T, { elapsed_ms: elapsedNow(head), running_since: null }, { id: head.id })
+  }
+  if (yielded) db.remove(T, { id: yielded.id })
+  const position = head ? Math.min(prev.position, head.position - 1) : prev.position
+  db.update(T, { finished_at: null, running_since: null, yielded_to: null, position }, { id: prev.id })
+  return () => {
+    db.update(T, before, { id: prev.id })
+    if (yieldedCopy) db.insert(T, yieldedCopy)
+    else if (head && headBefore) db.update(T, headBefore, { id: head.id })
+  }
+}

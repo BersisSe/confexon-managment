@@ -37,10 +37,54 @@
   --info-soft: #e8effc;
   --info-line: #b9cdf5;
 
+  --accent-hover: #9e4520;
+  --success-soft: #e6f2ea;
+  --success-line: #b9d9c3;
+  --warn-soft: #fbf0d9;
+  --warn-line: #ecd49a;
+  --warn-text: #8a5b0a;
+  --on-strong: #ffffff;
+  --dot: rgb(28 25 23 / 0.07);
+
   /* Motion */
   --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
   --dur-fast: 0.18s;
   --dur-med: 0.6s;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  /* --cream is the page, --white the raised surface. */
+  --cream: #121110;
+  --white: #1d1b19;
+  --cream-deep: #2b2825;
+  --divider: #36322e;
+  --text: #f3efe9;
+  --text-muted: #bdb5ac;
+  --text-tertiary: #958d84;
+  --accent: #d0652b;
+  --accent-dark: #f2a272;
+  --accent-hover: #b75521;
+  --accent-soft: #d0652b2e;
+  --surface-glass: rgb(29 27 25 / 0.78);
+  --grad-glow: radial-gradient(circle, rgb(208 101 43 / 0.09) 0%, rgb(208 101 43 / 0.03) 45%, transparent 70%);
+  --dot: rgb(243 239 233 / 0.05);
+  --danger: #f0867a;
+  --danger-soft: #3a1f1c;
+  --danger-line: #6b342d;
+  --success-text: #9fd6ae;
+  --success-soft: #1b2e21;
+  --success-line: #2f5039;
+  --warn-soft: #362a12;
+  --warn-line: #5c481d;
+  --warn-text: #efc66b;
+  --info: #8db4ff;
+  --info-soft: #1a2540;
+  --info-line: #31457a;
+  --on-strong: #17130f;
+  --shadow-sm: 0 2px 8px rgb(0 0 0 / 0.35);
+  --shadow-md: 0 12px 32px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 30px 70px rgb(0 0 0 / 0.55), 0 8px 20px rgb(0 0 0 / 0.35);
 }
 
 *,
@@ -92,7 +136,7 @@ img {
   border: 0;
   border-radius: var(--radius);
   background: var(--accent);
-  color: var(--white);
+  color: #fff;
   font-family: inherit;
   font-size: 16px;
   font-weight: 700;
@@ -106,7 +150,7 @@ img {
 }
 
 .btn:hover {
-  background-color: var(--accent-dark);
+  background-color: var(--accent-hover);
   transform: translateY(-2px);
   box-shadow: 0 12px 26px rgb(196 92 38 / 0.3);
 }
@@ -167,5 +211,21 @@ button:focus-visible,
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Small, quick motion. The reduced-motion rule above switches it all off.
+   `scale` (not transform) so it never fights an element's own transform. */
+button:not(:disabled):active,
+button.hit {
+  scale: 0.95;
+}
+.rise {
+  animation: rise 0.22s var(--ease-out) backwards;
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    translate: 0 10px;
   }
 }
