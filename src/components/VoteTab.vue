@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CountryFlag from '@/components/CountryFlag.vue'
 import { computed, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { db } from '@/lib/db'
@@ -144,7 +145,7 @@ function cancel() {
 
       <ul class="c-rows">
         <li v-for="d in eligible" :key="d.id">
-          <span>{{ d.country }}</span>
+          <span><CountryFlag :name="d.country" />{{ d.country }}</span>
           <span class="c-seg">
             <button class="y" :class="{ on: choiceOf(d) === 'yes' }" :aria-pressed="choiceOf(d) === 'yes'" @click="cast(d, 'yes')">{{ t('modes.yes') }}</button>
             <button class="n" :class="{ on: choiceOf(d) === 'no' }" :aria-pressed="choiceOf(d) === 'no'" @click="cast(d, 'no')">{{ t('modes.no') }}</button>

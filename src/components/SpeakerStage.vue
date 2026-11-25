@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CountryFlag from '@/components/CountryFlag.vue'
 import { Settings, RotateCcw, Play, Pause } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -10,6 +11,7 @@ const props = withDefaults(defineProps<{
   clock: string
   total: string
   remainingMs: number
+  totalMs: number
   running: boolean
   next: string[]
   showNext?: boolean
@@ -48,6 +50,9 @@ watch(() => props.settingsOpen, (open) => {
 }, { immediate: true })
 onBeforeUnmount(unlisten)
 
+// Share of the speaking time still left, drives the bar.
+const share = computed(() => (props.current && props.totalMs > 0 ? Math.min(1, Math.max(0, props.remainingMs / props.totalMs)) : 0))
+
 const first = computed(() => props.next[0] ?? null)
 const rest = computed(() => props.next.slice(1, 9))
 const more = computed(() => Math.max(0, props.next.length - 9))
@@ -69,9 +74,11 @@ const more = computed(() => Math.max(0, props.next.length - 9))
         </Transition>
       </div>
       <span class="lbl">{{ t('session.currentSpeaker') }}</span>
-      <div class="who" :class="{ none: !current }">{{ current ?? t('session.nobodyShort') }}</div>
+      <div class="who" :class="{ none: !current }"><CountryFlag :name="current" />{{ current ?? t('session.nobodyShort') }}</div>
       <p v-if="yieldedFrom" class="tagline">{{ t('session.yieldedFrom', { c: yieldedFrom }) }}</p>
       <p v-else-if="yieldedTo === 'questions'" class="tagline q">{{ t('session.yieldQuestions') }}</p>
+      <!-- Decorative: the clock below says the same in text. -->
+      <div class="timebar" :class="{ low: remainingMs <= 10000 }" aria-hidden="true"><i :style="{ transform: `scaleX(${share})` }" /></div>
       <div class="clock" role="timer" aria-live="off">{{ clock }}<span> / {{ total }}</span></div>
       <div class="ctrl">
         <button :disabled="!current" :aria-label="t('session.minus15')" @click="emit('adjust', -15)">−15</button>
@@ -85,10 +92,10 @@ const more = computed(() => Math.max(0, props.next.length - 9))
 
     <aside v-if="showNext !== false" class="next">
       <span class="lbl">{{ t('session.upNext') }}</span>
-      <div v-if="first" class="n1">{{ first }}</div>
+      <div v-if="first" class="n1"><CountryFlag :name="first" />{{ first }}</div>
       <p v-else class="muted">{{ t('session.nobodyNext') }}</p>
       <ol v-if="rest.length" class="chips" start="2">
-        <li v-for="(c, i) in rest" :key="i + c">{{ c }}</li>
+        <li v-for="(c, i) in rest" :key="i + c"><CountryFlag :name="c" />{{ c }}</li>
         <li v-if="more" class="more">+{{ more }}</li>
       </ol>
     </aside>
@@ -114,9 +121,15 @@ const more = computed(() => Math.max(0, props.next.length - 9))
 @media (prefers-reduced-motion: reduce) { .now.up { animation: none; box-shadow: 0 0 0 6px rgb(163 50 39 / .22) } }
 .lbl { display: block; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-tertiary); font-weight: 700 }
 .who { font-family: var(--font-display); font-weight: 700; line-height: 1.05; font-size: clamp(2.4rem, 6.5vw, 5rem); margin: 10px 0 0; overflow-wrap: anywhere }
+/* Current speaker: flag on top, name below. cover crops the PNG's blank top/bottom. */
+.who .flag { display: block; width: 1.9em; height: 1.27em; object-fit: cover; margin: 0 auto .16em }
 .who.none { color: var(--text-tertiary); font-size: clamp(1.6rem, 4vw, 2.6rem) }
 .tagline { margin: 6px 0 0; font-weight: 700; color: var(--info) }
 .tagline.q { color: var(--accent-dark) }
+.timebar { height: 12px; max-width: 560px; margin: 18px auto 0; border-radius: 999px; background: var(--cream-deep); overflow: hidden }
+.timebar i { display: block; height: 100%; background: var(--accent); transform-origin: left; transition: transform .25s linear }
+.timebar.low i { background: var(--danger) }
+@media (prefers-reduced-motion: reduce) { .timebar i { transition: none } }
 .clock { font-family: var(--font-display); font-weight: 700; font-variant-numeric: tabular-nums; font-size: clamp(3.6rem, 10vw, 8rem); line-height: 1.1; padding: 8px 0 14px }
 .clock span { color: var(--text-tertiary); font-size: .4em }
 .now.up .clock { color: var(--danger) }

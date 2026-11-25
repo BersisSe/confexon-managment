@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CountryFlag from '@/components/CountryFlag.vue'
 import { ArrowLeft } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
@@ -34,7 +35,7 @@ onMounted(async () => {
     <table class="tbl">
       <thead><tr><th>{{ t('roster.country') }}</th><th>{{ t('roster.delegate') }}</th></tr></thead>
       <tbody>
-        <tr v-for="d in delegates" :key="d.id"><td>{{ d.country }}</td><td>{{ d.display_name }}</td></tr>
+        <tr v-for="d in delegates" :key="d.id"><td><CountryFlag :name="d.country" />{{ d.country }}</td><td>{{ d.display_name }}</td></tr>
       </tbody>
     </table>
   </section>

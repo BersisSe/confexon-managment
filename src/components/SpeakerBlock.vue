@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CountryFlag from '@/components/CountryFlag.vue'
 import { ArrowUp, ArrowDown, X, Plus } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -77,6 +78,7 @@ function next() {
       :current="current ? country(current) : null"
       :clock="fmt(remaining)"
       :total="fmt((current?.duration_seconds ?? seconds) * 1000)"
+      :total-ms="(current?.duration_seconds ?? seconds) * 1000"
       :remaining-ms="remaining"
       :running="!!current?.running_since"
       :next="upcoming.map(country)"
@@ -97,7 +99,7 @@ function next() {
     <div v-if="manage" class="c-card c-add">
       <ul v-if="upcoming.length" class="c-rows soft">
         <li v-for="(s, i) in upcoming" :key="s.id">
-          <span>{{ i + 2 }}. {{ country(s) }}</span>
+          <span>{{ i + 2 }}. <CountryFlag :name="country(s)" />{{ country(s) }}</span>
           <span class="c-acts">
             <button class="c-x" :disabled="i === 0" :aria-label="t('session.moveUp')" @click="ops.moveSpeaker(queue, s, -1, t('undo.moveSpeaker'))"><ArrowUp :size="16" /></button>
             <button class="c-x" :disabled="i === upcoming.length - 1" :aria-label="t('session.moveDown')" @click="ops.moveSpeaker(queue, s, 1, t('undo.moveSpeaker'))"><ArrowDown :size="16" /></button>
@@ -108,7 +110,7 @@ function next() {
       <input v-model="search" type="search" :placeholder="t('session.search')" />
       <p v-if="!canAdd" class="muted">{{ t('modes.singleTaken') }}</p>
       <ul v-else class="c-pick grid">
-        <li v-for="d in addable" :key="d.id"><button @click="add(d)">{{ d.country }}<Plus :size="16" /></button></li>
+        <li v-for="d in addable" :key="d.id"><button @click="add(d)"><CountryFlag :name="d.country" />{{ d.country }}<Plus :size="16" /></button></li>
       </ul>
     </div>
   </div>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CountryFlag from '@/components/CountryFlag.vue'
 import { RotateCcw, Plus, Play, Pause } from 'lucide-vue-next'
 import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -148,7 +149,7 @@ function end() {
         <li v-for="m in waiting" :key="m.id">
           <span>
             <strong>{{ m.title || t('modes.title.' + kind) }}</strong>
-            <small class="muted" v-if="m.delegate_id"> · {{ byId[m.delegate_id]?.country }}</small>
+            <small class="muted" v-if="m.delegate_id"> · <CountryFlag :name="byId[m.delegate_id]?.country" />{{ byId[m.delegate_id]?.country }}</small>
           </span>
           <button class="btn small" @click="startMotion(m)">{{ t('modes.start') }}</button>
         </li>

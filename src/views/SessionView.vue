@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CountryFlag from '@/components/CountryFlag.vue'
 import { ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Undo2, Bell, BellOff, Minus, Plus, X } from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import { useRoute } from 'vue-router'
@@ -397,7 +398,7 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
         </div>
         <ul class="roll">
           <li v-for="d in delegates" :key="d.id">
-            <span class="who"><strong>{{ d.country }}</strong><small class="muted">{{ d.display_name }}</small></span>
+            <span class="who"><strong><CountryFlag :name="d.country" />{{ d.country }}</strong><small class="muted">{{ d.display_name }}</small></span>
             <span class="seg">
               <button v-for="s in statuses" :key="s" :class="[s, { on: attendance[d.id] === s }]" :aria-pressed="attendance[d.id] === s" @click="setStatus(d, s)">
                 {{ t('session.short.' + s) }}
@@ -411,7 +412,7 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
         <SpeakerStage
           can-settings can-yield v-model:settings-open="settingsOpen"
           :current="current ? country(current.delegate_id) : null"
-          :clock="fmt(remainingNum)" :total="totalFmt" :remaining-ms="remainingNum" :running="!!current?.running_since"
+          :clock="fmt(remainingNum)" :total="totalFmt" :total-ms="(current?.duration_seconds ?? speakSeconds) * 1000" :remaining-ms="remainingNum" :running="!!current?.running_since"
           :next="upcoming.map((s) => country(s.delegate_id))"
           :yielded-to="current?.yielded_to" :yielded-from="current?.yielded_from ? country(current.yielded_from) : null"
           @play="current && ops.toggleTimer(current)" @reset="current && ops.resetTimer(current, t('undo.resetTimer'))"
@@ -451,7 +452,7 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
           </div>
           <p class="muted small">{{ t('session.yieldDelegate') }}</p>
           <ul class="pick pgrid">
-            <li v-for="d in yieldTargets" :key="d.id"><button @click="yieldDelegate(d)">{{ d.country }}<ArrowRight :size="16" /></button></li>
+            <li v-for="d in yieldTargets" :key="d.id"><button @click="yieldDelegate(d)"><CountryFlag :name="d.country" />{{ d.country }}<ArrowRight :size="16" /></button></li>
           </ul>
         </div>
 
@@ -459,7 +460,7 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
         <div v-if="manage" class="card pad add">
           <ul v-if="upcoming.length" class="c-rows soft">
             <li v-for="(s, i) in upcoming" :key="s.id">
-              <span>{{ i + 2 }}. {{ country(s.delegate_id) }}</span>
+              <span>{{ i + 2 }}. <CountryFlag :name="country(s.delegate_id)" />{{ country(s.delegate_id) }}</span>
               <span class="c-acts">
                 <button class="x" :disabled="i === 0" :aria-label="t('session.moveUp')" @click="ops.moveSpeaker(queue, s, -1, t('undo.moveSpeaker'))"><ArrowUp :size="16" /></button>
                 <button class="x" :disabled="i === upcoming.length - 1" :aria-label="t('session.moveDown')" @click="ops.moveSpeaker(queue, s, 1, t('undo.moveSpeaker'))"><ArrowDown :size="16" /></button>
@@ -470,7 +471,7 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
           <input v-model="search" type="search" :placeholder="t('session.search')" :disabled="!rolled" />
           <p v-if="!rolled" class="muted">{{ t('session.rollFirst') }}</p>
           <ul v-else class="pick pgrid">
-            <li v-for="d in addable" :key="d.id"><button @click="addSpeaker(d)">{{ d.country }}<Plus :size="16" /></button></li>
+            <li v-for="d in addable" :key="d.id"><button @click="addSpeaker(d)"><CountryFlag :name="d.country" />{{ d.country }}<Plus :size="16" /></button></li>
           </ul>
         </div>
       </div>
@@ -504,7 +505,7 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
 </template>
 
 <style scoped>
-.console { padding-bottom: 90px }
+.console { padding-bottom: 112px }
 .strip { display: flex; align-items: center; gap: 10px; padding: 10px 0 }
 .strip .back { text-decoration: none; font-size: 22px; line-height: 1; padding: 4px 10px; border-radius: 10px; color: var(--text-muted) }
 .strip .back:hover { background: var(--cream-deep) }
@@ -587,11 +588,11 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
 .pick { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; max-height: 52vh; overflow: auto }
 .pick button { width: 100%; display: flex; justify-content: space-between; border: 1px solid var(--divider); background: var(--white); border-radius: 10px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer }
 .pick button:hover { border-color: var(--accent); background: var(--accent-soft) }
-.tabbar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; gap: 4px; padding: 8px; background: var(--surface-glass); backdrop-filter: blur(14px); border-top: 1px solid var(--divider) }
-.tabbar button { border: 0; background: none; padding: 10px 14px; border-radius: 10px; font: inherit; font-weight: 700; color: var(--text-tertiary); cursor: pointer }
-.tabbar button.on { background: var(--accent-soft); color: var(--accent-dark) }
-.tabbar button { position: relative }
-.dot { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: #3e7c4f }
+.tabbar { position: fixed; z-index: 20; left: 0; right: 0; bottom: calc(22px + env(safe-area-inset-bottom)); width: fit-content; max-width: calc(100% - 24px); margin: 0 auto; display: flex; gap: 4px; padding: 6px; overflow-x: auto; scrollbar-width: none; background: var(--surface-glass); backdrop-filter: blur(14px); border: 1px solid var(--divider); border-radius: 999px; box-shadow: var(--shadow-lg) }
+.tabbar button { position: relative; flex: none; border: 0; background: none; padding: 11px 20px; border-radius: 999px; font: inherit; font-weight: 700; color: var(--text-tertiary); cursor: pointer; transition: background var(--dur-fast) ease, color var(--dur-fast) ease }
+.tabbar button:hover { background: var(--cream-deep); color: var(--text) }
+.tabbar button.on { background: var(--accent); color: #fff }
+.dot { position: absolute; top: 5px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: #3e7c4f; box-shadow: 0 0 0 2px var(--white) }
 .dot.warn { background: #d99a2b }
 .modes { margin-top: 18px }
 @media (max-width: 820px) { .grid { grid-template-columns: 1fr } }

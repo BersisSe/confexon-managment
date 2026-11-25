@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CountryFlag from '@/components/CountryFlag.vue'
 import { X } from 'lucide-vue-next'
 import { computed, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -114,7 +115,7 @@ function remove(m: Motion) {
             <strong>{{ t('modes.kind.' + m.kind) }}</strong>
             <span v-if="m.title"> — {{ m.title }}</span>
             <small class="muted">
-              <template v-if="m.delegate_id"> · {{ byId[m.delegate_id]?.country }}</template>
+              <template v-if="m.delegate_id"> · <CountryFlag :name="byId[m.delegate_id]?.country" />{{ byId[m.delegate_id]?.country }}</template>
               <template v-if="describe(m)"> · {{ describe(m) }}</template>
             </small>
           </div>
