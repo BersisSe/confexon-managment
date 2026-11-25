@@ -178,6 +178,10 @@ function end() {
 
       <div v-if="kind === 'unmod'" class="c-card" :class="{ up: totalLeft === 0 }" style="margin-top: 14px">
         <div class="c-clock big" role="timer">{{ fmt(totalLeft) }} <span>/ {{ fmt((active.total_seconds ?? 0) * 1000) }}</span></div>
+        <!-- Starts full and drains; the clock above says the same in text. -->
+        <div class="um-bar" :class="{ low: totalLeft <= 10000 }" aria-hidden="true">
+          <i :style="{ transform: `scaleX(${Math.min(1, totalLeft / ((active.total_seconds || 1) * 1000))})` }" />
+        </div>
         <div class="c-ctrl">
           <button :aria-label="t('session.reset')" @click="reset"><RotateCcw :size="18" /></button>
           <button class="go" :aria-label="t('session.playPause')" @click="toggle"><Pause v-if="active.running_since" :size="18" fill="currentColor" /><Play v-else :size="18" fill="currentColor" /></button>
@@ -214,6 +218,9 @@ function end() {
 </template>
 
 <style scoped>
+.um-bar { height: 16px; max-width: 760px; margin: 0 auto 18px; border-radius: 999px; background: var(--cream-deep); overflow: hidden }
+.um-bar i { display: block; height: 100%; background: var(--accent); transform-origin: left; transition: transform .25s linear }
+.um-bar.low i { background: var(--danger) }
 .head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 8px }
 .ttl { flex: 1; min-width: 240px }
 .ttl h2 { margin: 2px 0 0; font-family: var(--font-display); font-size: clamp(1.3rem, 2.4vw, 1.9rem); line-height: 1.15 }
