@@ -1,0 +1,171 @@
+
+:root {
+  --cream: #f4f1ec;
+  --white: #ffffff;
+  --accent: #c45c26;
+  --accent-dark: #9e4520;
+  --accent-soft: #c45c2628;
+  --text: #1c1917;
+  --text-muted: #57534e;
+  --text-tertiary: #78716c;
+  --error: #f07167;
+  --success: #3e7c4f;
+  --divider: #e7e5e4;
+  --radius: 14px;
+  --page: 1120px;
+
+  --font-display: 'Bricolage Grotesque', 'Public Sans', system-ui, sans-serif;
+  --font-body: 'Public Sans', system-ui, -apple-system, sans-serif;
+
+  /* Depth */
+  --shadow-sm: 0 2px 8px rgb(58 42 32 / 0.06);
+  --shadow-md: 0 12px 32px rgb(58 42 32 / 0.08), 0 2px 6px rgb(58 42 32 / 0.04);
+  --shadow-lg: 0 30px 70px rgb(58 42 32 / 0.14), 0 8px 20px rgb(58 42 32 / 0.07);
+  --ring: 0 0 0 4px rgb(196 92 38 / 0.18);
+
+  /* Surfaces */
+  --cream-deep: #ece7df;
+  --surface-glass: rgb(255 255 255 / 0.62);
+  --grad-glow: radial-gradient(circle, rgb(196 92 38 / 0.1) 0%, rgb(196 92 38 / 0.03) 45%, transparent 70%);
+
+  /* Status colors (admin) */
+  --danger: #a33227;
+  --danger-soft: #fbeae7;
+  --danger-line: #e5b3ac;
+  --success-text: #2c5a38;
+  --info: #1d4ed8;
+  --info-soft: #e8effc;
+  --info-line: #b9cdf5;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur-fast: 0.18s;
+  --dur-med: 0.6s;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 92px;
+}
+
+body {
+  margin: 0;
+  background: var(--cream);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  text-wrap: balance;
+}
+
+a {
+  color: inherit;
+}
+
+img {
+  max-width: 100%;
+}
+
+.wrap {
+  width: min(var(--page), calc(100% - 40px));
+  margin-inline: auto;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--white);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: 0 8px 20px rgb(196 92 38 / 0.22);
+  cursor: pointer;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    filter var(--dur-fast) ease;
+}
+
+.btn:hover {
+  background-color: var(--accent-dark);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 26px rgb(196 92 38 / 0.3);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+/* Alternate tinted section background. */
+.section-band {
+  background: var(--cream-deep);
+}
+
+/* Faint dot grid, CSS only. */
+.dot-grid {
+  background-image: radial-gradient(rgb(28 25 23 / 0.09) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* Scroll reveal: only hidden once useReveal() has armed the page (html.reveal-ready),
+   so SSR / no-JS output stays fully visible. */
+@media (prefers-reduced-motion: no-preference) {
+  html.reveal-ready .reveal:not(.is-visible) {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+
+  html.reveal-ready .reveal.from-left:not(.is-visible) {
+    transform: translateX(-32px);
+  }
+
+  html.reveal-ready .reveal.from-right:not(.is-visible) {
+    transform: translateX(32px);
+  }
+
+  html.reveal-ready .reveal {
+    transition:
+      opacity var(--dur-med) var(--ease-out) var(--reveal-delay, 0s),
+      transform var(--dur-med) var(--ease-out) var(--reveal-delay, 0s);
+  }
+}
+
+/* One visible keyboard-focus treatment, everywhere. */
+a:focus-visible,
+button:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
