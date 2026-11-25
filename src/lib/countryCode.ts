@@ -36,3 +36,12 @@ function build() {
 }
 
 export const countryCode = (name: string): string | null => (table ??= build()).get(norm(name)) ?? null
+
+export const flagUrl = (name: string) => {
+  const code = countryCode(name)
+  return code ? `https://flagsapi.com/${code}/flat/64.png` : null
+}
+// Fetch a committee's flags up front so they do not pop in one by one.
+export function preloadFlags(names: string[]) {
+  for (const url of new Set(names.map(flagUrl))) if (url) new Image().src = url
+}

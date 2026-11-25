@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import CountryFlag from '@/components/CountryFlag.vue'
-import { ArrowLeft, ArrowRight, Undo2, ChevronDown, ChevronUp, Bell, BellOff, Minus, Plus, X } from 'lucide-vue-next'
+import { ArrowLeft, ArrowRight, Undo2, ChevronDown, Bell, BellOff, Minus, Plus, X } from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/stores/auth'
-import { db, flush, onLocal, online, pending, syncing, type Op } from '@/lib/db'
+import { db, flush, onLocal, online, pending, syncing, writes, type Op } from '@/lib/db'
 import { canUndo, clearUndo, lastLabel, pushUndo, undoLast } from '@/lib/undo'
 import { soundOn, toggleSound } from '@/lib/alerts'
 import * as ops from '@/lib/speakerOps'
@@ -15,6 +15,8 @@ import MotionsTab from '@/components/MotionsTab.vue'
 import CaucusPanel from '@/components/CaucusPanel.vue'
 import VoteTab from '@/components/VoteTab.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
+import { preloadFlags } from '@/lib/countryCode'
+import LoadingScreen from '@/components/LoadingScreen.vue'
 import RollCall from '@/components/RollCall.vue'
 import OpeningSpeech from '@/components/OpeningSpeech.vue'
 import SpeakerAdd from '@/components/SpeakerAdd.vue'
@@ -106,18 +108,14 @@ const openingDone = ref(false)
 const spokenBefore = ref<string[]>([])
 const phase = computed(() => (!rollDone.value ? 'roll' : !openingDone.value ? 'opening' : 'main'))
 
-async function loadFlow(sid: string) {
-  const { data: all, error: e } = await supabase.from('cmd_sessions').select('id').eq('committee_id', committeeId)
-  if (e || !all) return
-  const ids = all.map((x) => x.id)
+async function fetchFlow() {
   const [l, sp] = await Promise.all([
-    supabase.from('cmd_log').select('session_id, kind').in('session_id', ids).in('kind', ['roll_done', 'opening_done']),
-    supabase.from('cmd_speakers').select('session_id, delegate_id').in('session_id', ids).eq('list', 'single').is('motion_id', null).not('finished_at', 'is', null),
+    supabase.from('cmd_log').select('session_id, kind, cmd_sessions!inner(committee_id)')
+      .eq('cmd_sessions.committee_id', committeeId).in('kind', ['roll_done', 'opening_done']),
+    supabase.from('cmd_speakers').select('session_id, delegate_id, cmd_sessions!inner(committee_id)')
+      .eq('cmd_sessions.committee_id', committeeId).eq('list', 'single').is('motion_id', null).not('finished_at', 'is', null),
   ])
-  if (l.error || sp.error) return // offline: keep what we have
-  rollDone.value = l.data.some((x) => x.session_id === sid && x.kind === 'roll_done')
-  openingDone.value = l.data.some((x) => x.kind === 'opening_done')
-  spokenBefore.value = sp.data.filter((x) => x.session_id !== sid).map((x) => x.delegate_id)
+  return l.error || sp.error ? null : { logs: l.data, spoken: sp.data }
 }
 
 async function mark(kind: 'roll_done' | 'opening_done', label: string) {
@@ -210,7 +208,6 @@ function subscribe() {
   if (channel || !session.value) return
   const sid = session.value.id
   const f = (table: string, col = 'session_id') => ({ event: '*', schema: 'public', table, filter: `${col}=eq.${sid}` }) as const
-  const reload = () => { if (!pending.value.length) refreshAll() }
   channel = supabase.channel(`cmd-${sid}`)
     .on('postgres_changes', f('cmd_attendance'), reload)
     .on('postgres_changes', f('cmd_log'), reload)
@@ -225,22 +222,38 @@ function subscribe() {
 async function refreshAll() {
   const sid = session.value?.id
   if (!sid) return
-  const [a, s, m, v, sess] = await Promise.all([
+  const seen = writes.count
+  const [a, s, m, v, sess, b, flow] = await Promise.all([
     supabase.from('cmd_attendance').select('delegate_id, status').eq('session_id', sid),
     supabase.from('cmd_speakers').select('*').eq('session_id', sid),
     supabase.from('cmd_motions').select('*').eq('session_id', sid).order('created_at'),
     supabase.from('cmd_votes').select('*').eq('session_id', sid).order('created_at'),
     supabase.from('cmd_sessions').select('id, title, agenda, speaker_seconds, status').eq('id', sid).single(),
-    loadFlow(sid),
+    supabase.from('cmd_ballots').select('vote_id, delegate_id, choice, cmd_votes!inner(session_id)').eq('cmd_votes.session_id', sid),
+    fetchFlow(),
   ])
   if (a.error || s.error || m.error || v.error) return // offline: keep what we have
+  // Something was changed here while we were reading: this snapshot is stale.
+  if (session.value?.id !== sid) return
+  if (writes.count !== seen || writes.inFlight) return reload()
   attendance.value = Object.fromEntries((a.data ?? []).map((r) => [r.delegate_id, r.status as Status]))
   speakers.value = (s.data ?? []) as Speaker[]
   motions.value = (m.data ?? []) as Motion[]
   votes.value = (v.data ?? []) as Vote[]
-  const ids = votes.value.map((x) => x.id)
-  ballots.value = ids.length ? (((await supabase.from('cmd_ballots').select('*').in('vote_id', ids)).data ?? []) as Ballot[]) : []
+  if (!b.error) ballots.value = (b.data ?? []) as unknown as Ballot[]
   if (sess.data) session.value = sess.data
+  if (flow) {
+    rollDone.value = flow.logs.some((x) => x.session_id === sid && x.kind === 'roll_done')
+    openingDone.value = flow.logs.some((x) => x.kind === 'opening_done')
+    spokenBefore.value = flow.spoken.filter((x) => x.session_id !== sid).map((x) => x.delegate_id)
+  }
+}
+
+// Many changes arrive in bursts (each of our own writes echoes back): fetch once.
+let reloadTimer: ReturnType<typeof setTimeout>
+function reload() {
+  clearTimeout(reloadTimer)
+  reloadTimer = setTimeout(() => { if (!pending.value.length) refreshAll() }, 350)
 }
 
 // Reconcile with the server once the outbox has drained or the socket is back.
@@ -298,7 +311,7 @@ const attention = computed(() =>
 
 // With no agenda adopted, the header says what the committee is doing instead.
 const stageName = computed(() => {
-  if (phase.value === 'roll' || panel.value === 'roll') return t('session.rollCall')
+  if (phase.value === 'roll' || panel.value === 'roll') return t('session.attendance')
   if (phase.value === 'opening') return t('opening.title')
   if (tab.value === 'gsl') return 'General Speakers’ List'
   if (tab.value === 'motions' || tab.value === 'vote') return t('session.tabs.' + tab.value)
@@ -317,13 +330,22 @@ function pauseTimers() {
 watch(tab, pauseTimers)
 watch(() => panel.value === 'roll', (open) => { if (open) pauseTimers() })
 
-const HEAD_KEY = 'cmd-head-open'
+// The top panel opens while the pointer (or keyboard focus) is on the slim bar.
 const headOpen = ref(false)
-try { headOpen.value = localStorage.getItem(HEAD_KEY) === '1' } catch { /* storage unavailable */ }
-function toggleHead() {
-  headOpen.value = !headOpen.value
-  try { localStorage.setItem(HEAD_KEY, headOpen.value ? '1' : '0') } catch { /* storage unavailable */ }
+let headTimer: ReturnType<typeof setTimeout>
+function openHead() {
+  clearTimeout(headTimer)
+  headOpen.value = true
 }
+// A short grace period, so slipping off the edge does not slam it shut.
+function closeHead(delay = 250) {
+  clearTimeout(headTimer)
+  headTimer = setTimeout(() => (headOpen.value = false), delay)
+}
+function onHeadBlur(e: FocusEvent) {
+  if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) closeHead()
+}
+onBeforeUnmount(() => clearTimeout(headTimer))
 
 function onKey(e: KeyboardEvent) {
   const el = e.target as HTMLElement | null
@@ -335,21 +357,25 @@ function onKey(e: KeyboardEvent) {
 onMounted(async () => {
   document.addEventListener('fullscreenchange', onFull)
   document.addEventListener('keydown', onKey)
-  tick = setInterval(() => (now.value = Date.now()), 100)
+  tick = setInterval(() => {
+    if (speakers.value.some((x) => x.running_since) || motions.value.some((x) => x.running_since)) now.value = Date.now()
+  }, 100)
   offLocal = onLocal(applyLocal)
   const [c, d] = await Promise.all([
     supabase.from('cmd_committees').select('name').eq('id', committeeId).single(),
     supabase.from('cmd_delegates').select('id, display_name, country').eq('committee_id', committeeId).order('country'),
+    loadSession(),
   ])
   committeeName.value = c.data?.name ?? ''
   delegates.value = d.data ?? []
-  await loadSession()
+  preloadFlags(delegates.value.map((x) => x.country))
   loading.value = false
 })
 onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', onFull)
   document.removeEventListener('keydown', onKey)
   clearInterval(tick)
+  clearTimeout(reloadTimer)
   offLocal?.()
   clearUndo()
   if (channel) supabase.removeChannel(channel)
@@ -513,7 +539,7 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
       <ThemeToggle />
     </div>
     <p v-if="netState === 'offline'" class="offline" role="alert">{{ t('net.offlineHelp') }}</p>
-    <p v-if="loading" class="muted">…</p>
+    <LoadingScreen v-if="loading" :cards="12" />
     <p v-if="error" class="err" role="alert">{{ error }}</p>
 
     <div v-if="!loading && !session" class="card start">
@@ -522,9 +548,10 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
       <button class="btn" @click="start">{{ t('session.start') }}</button>
     </div>
 
-    <template v-if="session">
+    <template v-if="session && !loading">
       <!-- Folded by default so the speaker screen fits without scrolling. -->
-      <header v-if="!headOpen" class="mini-head card">
+      <div class="hd" @mouseenter="openHead" @mouseleave="closeHead()" @focusin="openHead" @focusout="onHeadBlur">
+      <header class="mini-head card" tabindex="0" :aria-expanded="headOpen" @click="openHead">
         <span class="label">{{ t('session.agenda') }}</span>
         <strong>{{ session.agenda || stageName }}</strong>
         <span class="mh-counts" :aria-label="t('session.attendance')">
@@ -532,9 +559,10 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
           <span class="v" :title="t('session.voting')">{{ counts.voting }}</span>
           <span class="a" :title="t('session.absent')">{{ counts.absent }}</span>
         </span>
-        <button class="head-btn" :aria-expanded="false" :aria-label="t('session.showHead')" :title="t('session.showHead')" @click="toggleHead"><ChevronDown :size="18" /></button>
+        <ChevronDown :size="18" class="hd-arrow" :class="{ open: headOpen }" aria-hidden="true" />
       </header>
-      <header v-else class="top card rise">
+      <Transition name="hd">
+      <header v-if="headOpen" class="top card" @click="($event.target as HTMLElement).closest('button') && closeHead(0)">
         <div class="agenda">
           <span class="label">{{ t('session.agenda') }}</span>
           <strong>{{ session.agenda || stageName }}</strong>
@@ -549,10 +577,11 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
           <button class="lang" @click="panel = panel === 'agenda' ? '' : 'agenda'">{{ t('session.setAgenda') }}</button>
           <button v-if="phase !== 'roll'" class="btn small" @click="panel = panel === 'roll' ? '' : 'roll'">{{ t('session.rollCall') }}</button>
           <button class="lang end" @click="endSession">{{ t('session.end') }}</button>
-          <button class="head-btn" :aria-expanded="true" :aria-label="t('session.hideHead')" :title="t('session.hideHead')" @click="toggleHead"><ChevronUp :size="18" /></button>
         </div>
         </div>
       </header>
+      </Transition>
+      </div>
 
       <div v-if="panel === 'agenda'" class="card pad">
         <form class="inline" @submit.prevent="saveAgenda">
@@ -777,8 +806,14 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
 .mh-counts .p { background: var(--success-soft); color: var(--success-text) }
 .mh-counts .v { background: var(--info-soft); color: var(--info) }
 .mh-counts .a { background: var(--danger-soft); color: var(--danger) }
-.head-btn { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--divider); border-radius: 50%; background: var(--white); color: var(--text); cursor: pointer }
-.head-btn:hover { background: var(--cream-deep) }
+.hd { position: relative; z-index: 30 }
+.mini-head { cursor: default }
+.hd-arrow { flex: none; color: var(--text-tertiary); transition: rotate .2s var(--ease-out) }
+.hd-arrow.open { rotate: 180deg }
+/* Floats over the page, so nothing below jumps. No gap: the pointer can move into it. */
+.hd .top { position: absolute; top: 100%; left: 0; right: 0; margin-top: 0; box-shadow: var(--shadow-lg) }
+.hd-enter-active, .hd-leave-active { transition: opacity .16s ease, translate .18s var(--ease-out) }
+.hd-enter-from, .hd-leave-to { opacity: 0; translate: 0 -8px }
 .modes { margin-top: 18px }
 @media (max-width: 820px) { .grid { grid-template-columns: 1fr } }
 </style>

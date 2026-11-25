@@ -29,6 +29,9 @@ export const pending = ref<Op[]>(load())
 export const online = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
 export const syncing = ref(false)
 
+// Lets readers tell that their snapshot may be older than a write of ours.
+export const writes = { count: 0, inFlight: 0 }
+
 type Listener = (op: Op) => void
 const listeners = new Set<Listener>()
 export function onLocal(fn: Listener) {
@@ -79,12 +82,15 @@ export async function flush() {
 
 async function run(op: Omit<Op, 'opId'>) {
   const full: Op = { ...op, opId: crypto.randomUUID() }
+  writes.count++
   emitLocal(full)
   if (pending.value.length || !online.value) {
     enqueue(full)
     return { error: null, queued: true }
   }
+  writes.inFlight++
   const error = await exec(full).catch((e) => ({ message: String(e) }))
+  writes.inFlight--
   if (isNetworkError(error)) {
     enqueue(full)
     return { error: null, queued: true }

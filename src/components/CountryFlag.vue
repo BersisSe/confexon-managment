@@ -1,12 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { countryCode } from '@/lib/countryCode'
+import { flagUrl } from '@/lib/countryCode'
 
 const props = defineProps<{ name: string | null | undefined }>()
-const src = computed(() => {
-  const code = props.name ? countryCode(props.name) : null
-  return code ? `https://flagsapi.com/${code}/flat/64.png` : null
-})
+const src = computed(() => (props.name ? flagUrl(props.name) : null))
 // Remember which URL failed, so a new name gets a fresh try.
 const failed = ref<string | null>(null)
 </script>

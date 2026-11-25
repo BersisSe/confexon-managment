@@ -1,4 +1,5 @@
 export default {
+  loading: 'Loading…',
   app: { name: 'Confexon Commander', short: 'Commander', tagline: 'Run your MUN sessions from one screen.' },
   theme: { dark: 'Dark theme', light: 'Light theme' },
   roll: { unmarked: '{n} not marked', done: 'Finish roll call', back: 'Back to session', undo: 'Roll call finished' },
@@ -21,7 +22,7 @@ export default {
     captchaFailed: 'Verification failed, try again.',
     captchaLoad: 'Could not load verification, refresh the page.',
   },
-  committees: { title: 'Your committees', empty: 'No committees assigned to you yet.' },
+  committees: { allEvents: 'All conferences', count: '{n} committees', search: 'Search conferences', noMatch: 'No matching conference.', title: 'Your committees', empty: 'No committees assigned to you yet.' },
   roster: { openSession: 'Open session', count: '{n} delegates', country: 'Country', delegate: 'Delegate' },
   nav: { management: 'Management', live: 'Live session', main: 'Main', committees: 'Committees', back: 'Committees', logout: 'Log out', team: 'Team' },
   team: {
@@ -93,7 +94,6 @@ export default {
     reset: 'Reset',
     showMenu: 'Show menu',
     addSpeakers: 'Add speakers', startSpeeches: 'Start speeches', addHint: 'Tap a country on the left.',
-    showHead: 'Show top panel', hideHead: 'Hide top panel',
     playPause: 'Start / pause',
     previous: 'Previous',
     currentSpeaker: 'Current speaker',

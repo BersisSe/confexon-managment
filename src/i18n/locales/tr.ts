@@ -1,4 +1,5 @@
 export default {
+  loading: 'Yükleniyor…',
   app: { name: 'Confexon Commander', short: 'Commander', tagline: 'MUN oturumlarını tek ekrandan yönet.' },
   theme: { dark: 'Koyu tema', light: 'Açık tema' },
   roll: { unmarked: '{n} işaretlenmedi', done: 'Yoklamayı bitir', back: 'Oturuma dön', undo: 'Yoklama bitti' },
@@ -21,7 +22,7 @@ export default {
     captchaFailed: 'Doğrulama başarısız, tekrar dene.',
     captchaLoad: 'Doğrulama yüklenemedi, sayfayı yenile.',
   },
-  committees: { title: 'Komitelerin', empty: 'Henüz sana atanmış komite yok.' },
+  committees: { allEvents: 'Tüm konferanslar', count: '{n} komite', search: 'Konferans ara', noMatch: 'Eşleşen konferans yok.', title: 'Komitelerin', empty: 'Henüz sana atanmış komite yok.' },
   roster: { openSession: 'Oturumu aç', count: '{n} delege', country: 'Ülke', delegate: 'Delege' },
   nav: { management: 'Yönetim', live: 'Canlı oturum', main: 'Ana menü', committees: 'Komiteler', back: 'Komiteler', logout: 'Çıkış', team: 'Takım' },
   team: {
@@ -93,7 +94,6 @@ export default {
     reset: 'Sıfırla',
     showMenu: 'Menüyü göster',
     addSpeakers: 'Konuşmacı ekle', startSpeeches: 'Konuşmalara başla', addHint: 'Soldan bir ülkeye dokun.',
-    showHead: 'Üst paneli aç', hideHead: 'Üst paneli kapat',
     playPause: 'Başlat / durdur',
     previous: 'Önceki',
     currentSpeaker: 'Konuşmacı',

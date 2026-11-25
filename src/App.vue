@@ -68,7 +68,7 @@ async function logout() {
 </template>
 
 <style>
-body { background-image: radial-gradient(var(--dot) 1px, transparent 1px), var(--grad-glow); background-size: 22px 22px, 900px 600px; background-repeat: repeat, no-repeat; background-position: 0 0, 70% -120px; background-attachment: fixed }
+body { background-image: radial-gradient(var(--dot) 1px, transparent 1px), var(--grad-glow); background-size: 22px 22px, 900px 600px; background-repeat: repeat, no-repeat; background-position: 0 0, 70% -120px }
 .bar { position: sticky; top: 12px; z-index: 10; display: flex; align-items: center; gap: 14px; margin: 12px 0 8px; padding: 8px 10px 8px 14px; background: var(--surface-glass); backdrop-filter: blur(14px) saturate(1.2); border: 1px solid var(--divider); border-radius: 18px; box-shadow: var(--shadow-sm) }
 .links { display: flex; gap: 4px; margin-left: 6px }
 .links a { padding: 8px 14px; border-radius: 12px; text-decoration: none; font-weight: 600; color: var(--text-muted); transition: background var(--dur-fast) ease, color var(--dur-fast) ease }
@@ -93,7 +93,7 @@ a.card.row:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); bo
 .tbl tbody tr:hover { background: var(--cream) }
 .tbl th { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-tertiary); background: var(--cream-deep) }
 .tbl { box-shadow: var(--shadow-sm); border: 1px solid var(--divider) }
-.logo { display: flex; align-items: center; gap: 10px; text-decoration: none }
+.logo { flex: none; display: flex; align-items: center; gap: 10px; text-decoration: none }
 .brand { font-family: var(--font-display) }
 .grow { flex: 1 }
 .lang { border: 1px solid var(--divider); background: var(--white); border-radius: 10px; padding: 6px 10px; font-weight: 700; cursor: pointer }
