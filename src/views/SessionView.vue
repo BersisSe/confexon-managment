@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import CountryFlag from '@/components/CountryFlag.vue'
-import { ArrowLeft, ArrowRight, Undo2, ChevronDown, Bell, BellOff, Minus, Plus, X } from 'lucide-vue-next'
+import { ArrowLeft, ArrowRight, Undo2, ChevronDown, Trash2, Bell, BellOff, Minus, Plus, X } from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -16,6 +16,8 @@ import CaucusPanel from '@/components/CaucusPanel.vue'
 import VoteTab from '@/components/VoteTab.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import { preloadFlags } from '@/lib/countryCode'
+import { uniqueDelegates } from '@/lib/delegates'
+import { ask } from '@/lib/confirm'
 import LoadingScreen from '@/components/LoadingScreen.vue'
 import RollCall from '@/components/RollCall.vue'
 import OpeningSpeech from '@/components/OpeningSpeech.vue'
@@ -48,7 +50,7 @@ const onFull = () => (full.value = !!document.fullscreenElement)
 const tab = ref<'gsl' | 'motions' | 'mod' | 'unmod' | 'single' | 'vote'>('gsl')
 const loading = ref(true)
 const error = ref('')
-const panel = ref<'' | 'roll' | 'agenda' | 'yield'>('')
+const panel = ref<'' | 'roll' | 'agenda' | 'yield' | 'opening' | 'choose'>('')
 const agendaDraft = ref('')
 const secondsDraft = ref(90)
 const settingsOpen = ref(false)
@@ -61,10 +63,12 @@ let tick: ReturnType<typeof setInterval>
 let channel: ReturnType<typeof supabase.channel> | null = null
 let offLocal: (() => void) | null = null
 
-const byId = computed(() => Object.fromEntries(delegates.value.map((d) => [d.id, d])))
+// Every roster row, so older records pointing at a hidden duplicate still resolve.
+const allDelegates = ref<Delegate[]>([])
+const byId = computed(() => Object.fromEntries(allDelegates.value.map((d) => [d.id, d])))
 const country = (id: string | null | undefined) => (id ? byId.value[id]?.country ?? '—' : '')
 const counts = computed(() => {
-  const v = Object.values(attendance.value)
+  const v = delegates.value.map((d) => attendance.value[d.id]).filter(Boolean)
   return {
     present: v.filter((s) => s === 'present').length,
     voting: v.filter((s) => s === 'present_voting').length,
@@ -76,11 +80,13 @@ const queue = computed(() => speakers.value.filter((s) => s.list === 'gsl' && !s
 const current = computed(() => queue.value[0] ?? null)
 const upcoming = computed(() => queue.value.slice(1))
 const presentDelegates = computed(() => delegates.value.filter((d) => attendance.value[d.id] && attendance.value[d.id] !== 'absent'))
-// Until the first speech starts, GSL opens on the list builder.
+// GSL opens on the list builder until "start speeches" (or a speech already under way).
 const gslReady = ref(false)
-const gslSetup = computed(() =>
-  !gslReady.value && !speakers.value.some((s) => s.list === 'gsl' && (s.finished_at || s.running_since || s.elapsed_ms > 0)),
-)
+const gslSetup = computed(() => {
+  if (gslReady.value) return false
+  const underWay = speakers.value.some((s) => s.list === 'gsl' && (s.finished_at || s.running_since || s.elapsed_ms > 0))
+  return !(queue.value.length && underWay)
+})
 const yieldTargets = computed(() =>
   delegates.value.filter((d) => attendance.value[d.id] && attendance.value[d.id] !== 'absent' && d.id !== current.value?.delegate_id),
 )
@@ -101,12 +107,17 @@ const netState = computed<'ok' | 'offline' | 'reconnecting' | 'syncing'>(() => {
   return 'ok'
 })
 
-// ---- session flow: roll call -> opening speeches (once per committee) -> debate ----
+// ---- session flow: roll call -> debate. Opening speeches (once per committee) are
+// started from the top bar whenever the chair wants them. ----
 // Progress is kept as cmd_log entries, so no extra columns are needed.
 const rollDone = ref(false)
 const openingDone = ref(false)
 const spokenBefore = ref<string[]>([])
-const phase = computed(() => (!rollDone.value ? 'roll' : !openingDone.value ? 'opening' : 'main'))
+const phase = computed(() => (!rollDone.value ? 'roll' : 'main'))
+function finishOpening() {
+  panel.value = ''
+  mark('opening_done', t('opening.undoEnd'))
+}
 
 async function fetchFlow() {
   const [l, sp] = await Promise.all([
@@ -125,8 +136,9 @@ async function mark(kind: 'roll_done' | 'opening_done', label: string) {
   await saved
 }
 function finishRoll() {
-  panel.value = ''
-  if (!rollDone.value) mark('roll_done', t('roll.undo'))
+  const first = !rollDone.value
+  panel.value = first && !openingDone.value ? 'choose' : ''
+  if (first) mark('roll_done', t('roll.undo'))
 }
 
 // A new session starts with the roll call of the last one that had any.
@@ -312,7 +324,7 @@ const attention = computed(() =>
 // With no agenda adopted, the header says what the committee is doing instead.
 const stageName = computed(() => {
   if (phase.value === 'roll' || panel.value === 'roll') return t('session.attendance')
-  if (phase.value === 'opening') return t('opening.title')
+  if (panel.value === 'opening') return t('opening.title')
   if (tab.value === 'gsl') return 'General Speakers’ List'
   if (tab.value === 'motions' || tab.value === 'vote') return t('session.tabs.' + tab.value)
   return t('modes.kind.' + tab.value)
@@ -328,7 +340,23 @@ function pauseTimers() {
   }
 }
 watch(tab, pauseTimers)
-watch(() => panel.value === 'roll', (open) => { if (open) pauseTimers() })
+
+// Empties the waiting list on request. Finished speeches stay on record.
+async function clearGsl() {
+  const rows = queue.value.map((x) => ({ ...x, running_since: null, elapsed_ms: ops.elapsedNow(x) }))
+  if (!rows.length) return
+  const ok = await ask({ title: t('session.clearConfirm', { n: rows.length }), text: t('session.clearHelp'), yes: t('session.clear'), danger: true })
+  if (!ok) return
+  const wasReady = gslReady.value
+  gslReady.value = false
+  panel.value = ''
+  for (const row of rows) db.remove('cmd_speakers', { id: row.id })
+  pushUndo(t('undo.resetList'), () => {
+    for (const row of rows) db.insert('cmd_speakers', row)
+    gslReady.value = wasReady
+  })
+}
+watch(() => panel.value === 'roll' || panel.value === 'opening', pauseTimers)
 
 // The top panel opens while the pointer (or keyboard focus) is on the slim bar.
 const headOpen = ref(false)
@@ -363,11 +391,12 @@ onMounted(async () => {
   offLocal = onLocal(applyLocal)
   const [c, d] = await Promise.all([
     supabase.from('cmd_committees').select('name').eq('id', committeeId).single(),
-    supabase.from('cmd_delegates').select('id, display_name, country').eq('committee_id', committeeId).order('country'),
+    supabase.from('cmd_delegates').select('id, display_name, country, source').eq('committee_id', committeeId).order('country'),
     loadSession(),
   ])
   committeeName.value = c.data?.name ?? ''
-  delegates.value = d.data ?? []
+  allDelegates.value = d.data ?? []
+  delegates.value = uniqueDelegates(d.data ?? [])
   preloadFlags(delegates.value.map((x) => x.country))
   loading.value = false
 })
@@ -420,8 +449,8 @@ function markAll(status: Status) {
   })
 }
 
-function endSession() {
-  if (!confirm(t('session.endConfirm'))) return
+async function endSession() {
+  if (!(await ask({ title: t('session.endConfirm'), yes: t('session.end'), danger: true })) || !session.value) return
   const sid = session.value!.id
   log('session_ended')
   db.update('cmd_sessions', { status: 'closed', ended_at: new Date().toISOString() }, { id: sid })
@@ -559,6 +588,7 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
           <span class="v" :title="t('session.voting')">{{ counts.voting }}</span>
           <span class="a" :title="t('session.absent')">{{ counts.absent }}</span>
         </span>
+        <button v-if="phase === 'main' && !openingDone && panel !== 'opening' && panel !== 'choose'" class="btn mh-opening" @click.stop="panel = 'opening'">{{ t('opening.take') }}</button>
         <ChevronDown :size="18" class="hd-arrow" :class="{ open: headOpen }" aria-hidden="true" />
       </header>
       <Transition name="hd">
@@ -595,15 +625,25 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
         :done-label="t(phase === 'roll' ? 'roll.done' : 'roll.back')"
         @status="setStatus" @all="markAll('present')" @done="finishRoll"
       />
+      <div v-else-if="panel === 'choose' && !openingDone" class="card ch rise">
+        <h1>{{ t('opening.next') }}</h1>
+        <div class="ch-acts">
+          <button class="btn" @click="panel = 'opening'">{{ t('opening.take') }}</button>
+          <button class="lang" @click="panel = ''">{{ t('opening.toGsl') }}</button>
+        </div>
+      </div>
       <OpeningSpeech
-        v-else-if="phase === 'opening'" :session-id="session.id" :delegates="delegates" :attendance="attendance"
-        :speakers="speakers" :spoken-before="spokenBefore" :now="now" @log="log" @finish="mark('opening_done', t('opening.undoEnd'))"
+        v-else-if="panel === 'opening'" :session-id="session.id" :delegates="delegates" :attendance="attendance"
+        :speakers="speakers" :spoken-before="spokenBefore" :now="now" @log="log" @finish="finishOpening" @back="panel = ''"
       />
       <template v-else>
       <div v-if="tab === 'gsl' && gslSetup" class="gs rise">
         <div class="gs-head">
           <h2>{{ t('session.addSpeakers') }}</h2>
-          <button class="btn gs-go" :disabled="!queue.length" @click="gslReady = true">{{ t('session.startSpeeches') }}<ArrowRight :size="18" /></button>
+          <div class="gs-acts">
+            <button class="lang gs-clear" :disabled="!queue.length" @click="clearGsl"><Trash2 :size="16" />{{ t('session.clear') }}</button>
+            <button class="btn gs-go" :disabled="!queue.length" @click="gslReady = true">{{ t('session.startSpeeches') }}<ArrowRight :size="18" /></button>
+          </div>
         </div>
         <SpeakerAdd
           :delegates="presentDelegates" :by-id="byId" :queue="queue" @add="addSpeaker"
@@ -665,7 +705,7 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
           </div>
         </div>
 
-        <div class="manage"><button class="lang" :aria-expanded="manage" @click="manage = !manage">{{ manage ? t('session.hideManage') : t('session.manage') }}</button></div>
+        <div class="manage gs-acts"><button class="lang gs-clear" :disabled="!queue.length" @click="clearGsl"><Trash2 :size="16" />{{ t('session.clear') }}</button><button class="lang" :aria-expanded="manage" @click="manage = !manage">{{ manage ? t('session.hideManage') : t('session.manage') }}</button></div>
         <SpeakerAdd
           v-if="manage" class="rise" :delegates="presentDelegates" :by-id="byId" :queue="upcoming" :first-number="2" @add="addSpeaker"
           @move="(s, dir) => ops.moveSpeaker(queue, s, dir, t('undo.moveSpeaker'))"
@@ -799,6 +839,8 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
 .gs-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px }
 .gs-head h2 { margin: 0 }
 .gs-go { gap: 8px; border-radius: 999px }
+.gs-acts { display: flex; align-items: center; gap: 8px }
+.gs-clear:hover:not(:disabled) { background: var(--danger-soft); color: var(--danger); border-color: var(--danger-line) }
 .mini-head { display: flex; align-items: center; gap: 12px; margin-top: 4px; padding: 8px 10px 8px 18px }
 .mini-head strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-size: 1.15rem }
 .mh-counts { display: flex; gap: 6px }
@@ -806,14 +848,19 @@ const goto = (x: string) => { if ((tabs as readonly string[]).includes(x)) tab.v
 .mh-counts .p { background: var(--success-soft); color: var(--success-text) }
 .mh-counts .v { background: var(--info-soft); color: var(--info) }
 .mh-counts .a { background: var(--danger-soft); color: var(--danger) }
-.hd { position: relative; z-index: 30 }
+.hd { position: relative; z-index: 30; margin-bottom: 18px }
 .mini-head { cursor: default }
+.mh-opening { flex: none; min-height: 34px; padding: 0 16px; border-radius: 999px; font-size: 14px; box-shadow: none }
 .hd-arrow { flex: none; color: var(--text-tertiary); transition: rotate .2s var(--ease-out) }
 .hd-arrow.open { rotate: 180deg }
 /* Floats over the page, so nothing below jumps. No gap: the pointer can move into it. */
 .hd .top { position: absolute; top: 100%; left: 0; right: 0; margin-top: 0; box-shadow: var(--shadow-lg) }
 .hd-enter-active, .hd-leave-active { transition: opacity .16s ease, translate .18s var(--ease-out) }
 .hd-enter-from, .hd-leave-to { opacity: 0; translate: 0 -8px }
+.ch { display: grid; justify-items: center; gap: 20px; padding: 48px 20px; text-align: center; border-radius: 22px }
+.ch h1 { margin: 0 }
+.ch-acts { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center }
+.ch-acts button { min-width: 200px; min-height: 56px; border-radius: 999px; font-size: 16px; justify-content: center }
 .modes { margin-top: 18px }
 @media (max-width: 820px) { .grid { grid-template-columns: 1fr } }
 </style>

@@ -19,7 +19,7 @@ const props = defineProps<{
   spokenBefore: string[]
   now: number
 }>()
-const emit = defineEmits<{ finish: []; log: [kind: string, data: Record<string, unknown>] }>()
+const emit = defineEmits<{ back: []; finish: []; log: [kind: string, data: Record<string, unknown>] }>()
 const { t } = useI18n()
 
 const seconds = ref(90)
@@ -68,7 +68,10 @@ function back() {
   <section class="os rise">
     <div class="os-head">
       <h1>{{ t('opening.title') }}</h1>
-      <button class="lang" @click="emit('finish')">{{ t(rows.length ? 'opening.end' : 'opening.skip') }}</button>
+      <div class="os-acts">
+        <button class="lang" @click="emit('back')">{{ t('roll.back') }}</button>
+        <button v-if="rows.length" class="lang" @click="emit('finish')">{{ t('opening.end') }}</button>
+      </div>
     </div>
 
     <div v-if="!rows.length" class="os-setup">
@@ -102,6 +105,7 @@ function back() {
 .os { margin-top: 18px }
 .os-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px }
 .os-head h1 { margin: 0 }
+.os-acts { display: flex; gap: 8px }
 .os-setup { display: grid; justify-items: center; gap: 20px; padding: 36px 20px; text-align: center; border-radius: 22px; background: var(--white); border: 1px solid var(--divider); box-shadow: var(--shadow-sm) }
 .os-setup p { margin: 0; color: var(--text-muted) }
 .os-stepper { display: flex; align-items: center; gap: 20px }

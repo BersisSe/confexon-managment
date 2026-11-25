@@ -1,10 +1,16 @@
+<script lang="ts">
+// Lives outside setup so it survives leaving and returning to this page.
+const seen = new Set<string>()
+</script>
+
 <script setup lang="ts">
 import { ArrowLeft, ChevronRight, Search } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { supabase } from '@/lib/supabase'
 import LoadingScreen from '@/components/LoadingScreen.vue'
+import GavelIntro from '@/components/GavelIntro.vue'
 
 interface Row { id: string; name: string; event_id: string; events: { title: string } | null }
 const { t } = useI18n()
@@ -13,6 +19,21 @@ const rows = ref<Row[]>([])
 const loading = ref(true)
 const error = ref('')
 const query = ref('')
+
+// The gavel plays the first time each committee is opened (again after a page reload).
+const router = useRouter()
+const entering = ref<Row | null>(null)
+function open(e: MouseEvent, c: Row, navigate: (e: MouseEvent) => void) {
+  // New tab / new window clicks stay untouched.
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0 || seen.has(c.id)) return navigate(e)
+  e.preventDefault()
+  seen.add(c.id)
+  entering.value = c
+}
+function enter() {
+  const c = entering.value
+  if (c) router.push({ name: 'roster', params: { id: c.id } })
+}
 
 // First pick the conference, then its committees. The choice lives in the URL,
 // so the browser back button works.
@@ -52,9 +73,11 @@ onMounted(async () => {
 
     <ul v-else-if="selected" key="committees" class="cm-grid rise">
       <li v-for="c in committees" :key="c.id">
-        <RouterLink :to="{ name: 'roster', params: { id: c.id } }" class="card cm-card">
-          <strong>{{ c.name }}</strong>
-          <ChevronRight :size="20" aria-hidden="true" />
+        <RouterLink v-slot="{ href, navigate }" :to="{ name: 'roster', params: { id: c.id } }" custom>
+          <a :href="href" class="card cm-card" @click="open($event, c, navigate)">
+            <strong>{{ c.name }}</strong>
+            <ChevronRight :size="20" aria-hidden="true" />
+          </a>
         </RouterLink>
       </li>
     </ul>
@@ -77,6 +100,7 @@ onMounted(async () => {
         </li>
       </ul>
     </div>
+    <GavelIntro v-if="entering" :title="entering.name" @done="enter" />
   </section>
 </template>
 

@@ -14,6 +14,9 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.119.2
         version: 2.119.2
+      gsap:
+        specifier: ^3.15.1
+        version: 3.15.1
       lucide-vue-next:
         specifier: ^1.0.0
         version: 1.0.0(vue@3.5.46(typescript-native-bridge@6.0.3-bridge.19.tsgo.7.0.2))
@@ -703,6 +706,9 @@ packages:
     resolution: {integrity: sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==}
     engines: {node: '>=6.9.0'}
 
+  gsap@3.15.1:
+    resolution: {integrity: sha512-63yjWRFWj3QRP1UOuD8kcidCcy3nxb1mMRpwHr/xJRvPfm9GtWOXFAYUiL0ro1fgPq2nY53LR+98pAgy9BumBg==}
+
   hookable@5.5.3:
     resolution: {integrity: sha512-Yc+BQe8SvoXH1643Qez1zqLRmbA5rCL+sSmk6TVos0LWVfNIB7PGncdlId77WzLGSIB5KaWgTaNTs2lNVEI6VQ==}
 
@@ -1096,6 +1102,7 @@ packages:
     engines: {node: '>=v14.21.3'}
     peerDependencies:
       vite: ^6.0.0 || ^7.0.0 || ^8.0.0
+      vue: '*'
 
   vite-plugin-vue-inspector@6.0.0:
     resolution: {integrity: sha512-OpyITJLgZNibxlrik1EmRtvXHDjLRxNPsWkGFTERZs2LgMEdG4W0WoFt5GIgp3a3jRou+eJR8U1zOBk/XQgEbw==}
@@ -1872,6 +1879,8 @@ snapshots:
 
   gensync@1.0.0-beta.2: {}
 
+  gsap@3.15.1: {}
+
   hookable@5.5.3: {}
 
   iceberg-js@0.8.1: {}
@@ -2203,10 +2212,10 @@ snapshots:
       vite: 8.3.8(@types/node@24.19.2)
       vite-plugin-inspect: 11.4.1(vite@8.3.8(@types/node@24.19.2))
       vite-plugin-vue-inspector: 6.0.0(vite@8.3.8(@types/node@24.19.2))
+      vue: 3.5.46(typescript-native-bridge@6.0.3-bridge.19.tsgo.7.0.2)
     transitivePeerDependencies:
       - '@nuxt/kit'
       - supports-color
-      - vue
 
   vite-plugin-vue-inspector@6.0.0(vite@8.3.8(@types/node@24.19.2)):
     dependencies:

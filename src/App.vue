@@ -2,6 +2,7 @@
 import { LogOut } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import ThemeToggle from '@/components/ThemeToggle.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { computed } from 'vue'
 import { setLocale, SUPPORTED } from './i18n'
@@ -64,6 +65,7 @@ async function logout() {
       </div>
     </header>
     <RouterView />
+    <ConfirmDialog />
   </div>
 </template>
 

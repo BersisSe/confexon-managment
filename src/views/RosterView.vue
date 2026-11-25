@@ -5,6 +5,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { supabase } from '@/lib/supabase'
+import { uniqueDelegates } from '@/lib/delegates'
 import LoadingScreen from '@/components/LoadingScreen.vue'
 
 interface Delegate { id: string; display_name: string; country: string }
@@ -19,11 +20,11 @@ onMounted(async () => {
   const id = route.params.id as string
   const [c, d] = await Promise.all([
     supabase.from('cmd_committees').select('name').eq('id', id).single(),
-    supabase.from('cmd_delegates').select('id, display_name, country').eq('committee_id', id).order('country'),
+    supabase.from('cmd_delegates').select('id, display_name, country, source').eq('committee_id', id).order('country'),
   ])
   name.value = c.data?.name ?? ''
   if (d.error) error.value = d.error.message
-  delegates.value = d.data ?? []
+  delegates.value = uniqueDelegates(d.data ?? [])
   loading.value = false
 })
 </script>
