@@ -51,6 +51,7 @@ onMounted(async () => {
       <RouterLink v-slot="{ href, navigate }" :to="toSession()" custom>
         <a :href="href" class="btn open" @click="openSession($event, navigate)">{{ t('roster.openSession') }}</a>
       </RouterLink>
+      <RouterLink :to="{ name: 'rapporteur', params: { id: route.params.id } }" class="rapp">{{ t('rapp.title') }}</RouterLink>
       <GavelIntro v-if="gavel" :title="name" @done="router.push(toSession())" />
       <p v-if="error" class="err">{{ error }}</p>
       <table class="tbl">
@@ -65,4 +66,5 @@ onMounted(async () => {
 
 <style scoped>
 .open { margin: 8px 0 18px; text-decoration: none }
+.rapp { margin-left: 14px; font-weight: 700 }
 </style>
