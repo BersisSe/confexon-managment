@@ -1,0 +1,64 @@
+<!doctype html>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Public+Sans:ital,wght@0,400..800;1,400..600&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box }
+  body { width: 1080px; height: 1920px; overflow: hidden; background: #121110; color: #f3efe9; font-family: 'Public Sans', sans-serif; text-align: center }
+  section { display: none; width: 1080px; height: 1920px; padding: 260px 90px; flex-direction: column; align-items: center; justify-content: center }
+  h1 { font: 700 104px/1.12 'Bricolage Grotesque', sans-serif; letter-spacing: -0.02em }
+  #f2 h1 { font-size: 148px }
+  em { font-style: normal; color: #d0652b }
+  .clock { font: 800 320px/1 'Bricolage Grotesque', sans-serif; font-variant-numeric: tabular-nums; color: #d0652b; letter-spacing: -0.02em }
+  .rule { width: 680px; height: 8px; background: #36322e; margin: 70px 0; border-radius: 4px }
+  .sub { font-size: 52px; font-style: italic; color: #bdb5ac }
+  img { width: 230px; margin: 130px 0 40px }
+  .gavel { position: absolute; left: 320px; top: 880px; width: 440px; height: 250px; visibility: hidden }
+  .gavel svg { position: absolute; inset: 0; width: 440px; height: 250px }
+  .name { font: 700 66px 'Bricolage Grotesque', sans-serif }
+  .soon { margin-top: 56px; padding: 24px 52px; border: 3px solid #d0652b; border-radius: 99px; color: #f2a272; font-size: 36px; font-weight: 700; letter-spacing: .28em; text-transform: uppercase }
+  .url { margin-top: 56px; font-size: 46px; font-weight: 700; color: #f3efe9 }
+  h1, .name, .clock { font-optical-sizing: none; font-variation-settings: 'opsz' 24 }
+</style>
+
+<section id="f1">
+  <div class="clock" data-l="clock">00:00</div>
+  <div class="rule" data-l="rule"></div>
+  <p class="sub" data-l="sub">Your time has expired.</p>
+</section>
+
+<section id="f2">
+  <h1><span data-l="quote">“You may be<br>seated,</span><br><em data-l="delegate">delegate.”</em></h1>
+</section>
+
+<section id="f3">
+  <h1 data-l="head">Now it’s time<br>for the <em>chairs.</em></h1>
+  <img data-l="logo" src="../../public/logo.png" alt="">
+  <div class="name" data-l="name">Confexon Commander</div>
+  <div class="gavel">
+    <svg data-l="block" viewBox="0 0 440 250">
+      <rect x="34" y="206" width="132" height="16" rx="6" fill="#9e4520"/>
+      <rect x="20" y="222" width="160" height="24" rx="8" fill="#d0652b"/>
+    </svg>
+    <svg data-l="hammer" viewBox="0 0 440 250">
+      <rect x="140" y="101" width="270" height="28" rx="14" fill="#d0652b"/>
+      <rect x="338" y="97" width="82" height="36" rx="18" fill="#9e4520"/>
+      <rect x="58" y="38" width="84" height="160" rx="12" fill="#d0652b"/>
+      <rect x="48" y="30" width="104" height="34" rx="12" fill="#f2a272"/>
+      <rect x="48" y="172" width="104" height="34" rx="12" fill="#f2a272"/>
+    </svg>
+  </div>
+  <div class="soon" data-l="soon">Coming soon</div>
+  <div class="url" data-l="url">command.confexonapp.com</div>
+</section>
+
+<script>
+  const q = new URLSearchParams(location.search)
+  document.getElementById('f' + (q.get('f') || 1)).style.display = 'flex'
+  if (q.get('t')) document.querySelector('.clock').textContent = q.get('t')
+  // ?l=name renders only that element on a transparent page, for animate.py
+  if (q.get('l')) {
+    document.body.style.background = 'transparent'
+    document.body.style.visibility = 'hidden'
+    document.querySelector('[data-l="' + q.get('l') + '"]').style.visibility = 'visible'
+  }
+</script>
