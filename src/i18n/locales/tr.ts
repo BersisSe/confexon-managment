@@ -33,7 +33,7 @@ export default {
     failed: 'İşlem yapılamadı, tekrar dene.',
   },
   rapp: {
-    title: 'Raportör paneli', session: 'Oturum', open: 'açık', noSession: 'Chair oturum açınca burada görünür.',
+    title: 'Rapporteur paneli', session: 'Oturum', open: 'açık', noSession: 'Chair oturum açınca burada görünür.',
     start: 'Yazmaya başla', youWrite: 'Sen yazıyorsun', writing: '{name} yazıyor, sen izliyorsun.', someone: 'Biri',
     takeOver: 'Devral', confirmTake: 'Yazma devralınsın mı? Diğer kişi artık yazamaz.', taken: 'Başkası senden önce başladı.',
     saved: 'Kaydedildi', saving: 'Kaydediliyor…', offline: 'Bağlantı yok; taslak bu cihazda, yeniden denenecek.',
@@ -52,7 +52,7 @@ export default {
     unassignedHelp: 'Confexon’dan gelen bu akademi üyelerine bir komite seç.',
     noChair: 'Henüz akademi üyesi yok.',
     assign: 'Komite ata',
-    roles: { prechair: 'Başkan', vicechair: 'Başkan yrd.', rapporteur: 'Raportör', usg: 'USG', acas: 'ACAS', admin: 'Yönetici', finance: 'Finans', pr: 'PR', press: 'Basın', media: 'Medya', design: 'Tasarım', it: 'BT', security: 'Güvenlik', logistic: 'Lojistik', ctm: 'CTM' },
+    roles: { prechair: 'Başkan', vicechair: 'Başkan yrd.', rapporteur: 'Rapporteur', usg: 'USG', acas: 'ACAS', admin: 'Yönetici', finance: 'Finans', pr: 'PR', press: 'Basın', media: 'Medya', design: 'Tasarım', it: 'BT', security: 'Güvenlik', logistic: 'Lojistik', ctm: 'CTM' },
     title: 'Takım',
     lead: "Akademi ve organizasyon üyelerini Confexon’dan al, akademi üyelerini komitelere ata.",
     noCommittees: "Henüz komite yok. Önce “Confexon’dan yükle”ye bas.",
